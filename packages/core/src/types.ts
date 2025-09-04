@@ -50,8 +50,11 @@ export interface TradeSignal {
   symbol: string;
   direction: 'LONG' | 'SHORT';
   entryPrice: number;
-  targetPrice: number;
-  stopLoss: number;
+  // Supporta sia prezzi assoluti che percentuali
+  targetPrice?: number;
+  stopLoss?: number;
+  takeProfitPercent?: number;
+  stopLossPercent?: number;
   leverage: number;
   orderType: OrderType;
   reason: string;

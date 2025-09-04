@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { database, getActiveTradeSignals, populateTestSignals } from '@gpt-wolf/db'
-import type { TradingStats, Position, TradingSignal } from '../../../frontend/src/types/trading'
+import { rankAndSelectBestSignals, getSignalStats } from '@gpt-wolf/core/src/signal-ranker'
 
 const app = new Hono()
 
@@ -38,7 +38,7 @@ app.get('/api/stats', async (c) => {
     `)
     const balanceResult = balanceQuery.get() as any
 
-    const stats: TradingStats = {
+    const stats = {
       totalPnl: positionsResult?.totalPnl || 0,
       totalPnlPercentage: ((positionsResult?.totalPnl || 0) / 10000) * 100,
       winRate: tradesResult?.total > 0 ? (tradesResult.wins / tradesResult.total) * 100 : 0,
@@ -69,7 +69,7 @@ app.get('/api/positions', async (c) => {
 
     const rows = query.all() as any[]
 
-    const positions: Position[] = rows.map(row => {
+    const positions = rows.map(row => {
       const currentPrice = row.symbol === 'BTCUSDT' ? 44100 : 2620 // Mock current prices
       const pnl = row.side === 'long'
         ? row.size * (currentPrice - row.entry_price)
@@ -102,21 +102,24 @@ app.get('/api/positions', async (c) => {
   }
 })
 
-// Get trading signals
+// Get trading signals (only best ones)
 app.get('/api/signals', async (c) => {
   try {
     const dbSignals = getActiveTradeSignals()
-
-    const signals: TradingSignal[] = dbSignals.map(signal => ({
+    
+    // Seleziona solo i migliori 5 segnali
+    const bestSignals = rankAndSelectBestSignals(dbSignals, 5)
+    
+    const signals = bestSignals.map(signal => ({
       id: `${signal.symbol}-${signal.timestamp}`,
       symbol: signal.symbol,
       type: signal.direction === 'LONG' ? 'buy' : 'sell',
       strategy: signal.reason.includes('liquidation') ? 'liquidation-hunt' : 'momentum',
-      confidence: Math.floor(Math.random() * 20) + 70, // 70-90%
-      targetPrice: signal.targetPrice,
-      stopLoss: signal.stopLoss,
+      confidence: signal.confidence,
+      targetPrice: signal.entryPrice * (1 + (signal.takeProfitPercent || 0) / 100 * (signal.direction === 'LONG' ? 1 : -1)),
+      stopLoss: signal.entryPrice * (1 - (signal.stopLossPercent || 0) / 100 * (signal.direction === 'LONG' ? 1 : -1)),
       leverage: signal.leverage,
-      timestamp: new Date(signal.timestamp).toISOString(),
+      timestamp: new Date(signal.timestamp || Date.now()).toISOString(),
       status: 'pending'
     }))
 
@@ -124,6 +127,20 @@ app.get('/api/signals', async (c) => {
   } catch (error) {
     console.error('Error fetching signals:', error)
     return c.json({ error: 'Failed to fetch signals' }, 500)
+  }
+})
+
+// Get signal statistics
+app.get('/api/signal-stats', async (c) => {
+  try {
+    const dbSignals = getActiveTradeSignals()
+    const bestSignals = rankAndSelectBestSignals(dbSignals, 5)
+    const stats = getSignalStats(bestSignals)
+    
+    return c.json(stats)
+  } catch (error) {
+    console.error('Error fetching signal stats:', error)
+    return c.json({ error: 'Failed to fetch signal stats' }, 500)
   }
 })
 

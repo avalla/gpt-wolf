@@ -84,8 +84,13 @@ export class TelegramNotifier {
   private formatSignalMessage(signal: TradeSignal): string {
     const direction = signal.direction === 'LONG' ? '🟢 LONG' : '🔴 SHORT';
     const leverage = `${signal.leverage}x`;
-    const riskReward = this.calculateRiskReward(signal);
-    const potentialProfit = this.calculatePotentialProfit(signal);
+    
+    // Calcola target e stop loss da percentuali se necessario
+    const targetPrice = this.getTargetPrice(signal);
+    const stopLossPrice = this.getStopLossPrice(signal);
+    
+    const riskReward = this.calculateRiskRewardFromPrices(signal.entryPrice, targetPrice, stopLossPrice);
+    const potentialProfit = this.calculatePotentialProfitFromPrices(signal.entryPrice, targetPrice, signal.direction, signal.leverage);
     const orderTypeIcon = this.getOrderTypeIcon(signal.orderType);
 
     // Genera link Bybit per trading diretto
@@ -98,8 +103,8 @@ export class TelegramNotifier {
 
 ${direction} *${signal.symbol}*
 💰 Entry: \`$${signal.entryPrice.toFixed(4)}\`
-🎯 Target: \`$${signal.targetPrice.toFixed(4)}\`
-🛡️ Stop Loss: \`$${signal.stopLoss.toFixed(4)}\`
+🎯 Target: \`$${targetPrice.toFixed(4)}\`
+🛡️ Stop Loss: \`$${stopLossPrice.toFixed(4)}\`
 ⚡ Leverage: \`${leverage}\`
 ${orderTypeIcon} Order: \`${signal.orderType || 'Market'}\`
 📊 R/R: \`${riskReward}\`
@@ -145,25 +150,88 @@ _Usa sempre gestione del rischio appropriata_`;
   }
 
   /**
-   * Calcola risk/reward ratio
+   * Ottiene target price da signal (supporta sia percentuali che prezzi assoluti)
    */
-  private calculateRiskReward(signal: TradeSignal): string {
-    const risk = Math.abs(signal.entryPrice - signal.stopLoss);
-    const reward = Math.abs(signal.targetPrice - signal.entryPrice);
+  private getTargetPrice(signal: any): number {
+    if (signal.targetPrice !== undefined) {
+      return signal.targetPrice;
+    }
+    
+    if (signal.takeProfitPercent !== undefined) {
+      const tpPercent = signal.takeProfitPercent / 100;
+      if (signal.direction === 'LONG') {
+        return signal.entryPrice * (1 + tpPercent);
+      } else {
+        return signal.entryPrice * (1 - tpPercent);
+      }
+    }
+    
+    // Fallback: 1% target
+    return signal.direction === 'LONG' 
+      ? signal.entryPrice * 1.01 
+      : signal.entryPrice * 0.99;
+  }
+
+  /**
+   * Ottiene stop loss price da signal (supporta sia percentuali che prezzi assoluti)
+   */
+  private getStopLossPrice(signal: any): number {
+    if (signal.stopLoss !== undefined) {
+      return signal.stopLoss;
+    }
+    
+    if (signal.stopLossPercent !== undefined) {
+      const slPercent = signal.stopLossPercent / 100;
+      if (signal.direction === 'LONG') {
+        return signal.entryPrice * (1 - slPercent);
+      } else {
+        return signal.entryPrice * (1 + slPercent);
+      }
+    }
+    
+    // Fallback: 0.5% stop loss
+    return signal.direction === 'LONG' 
+      ? signal.entryPrice * 0.995 
+      : signal.entryPrice * 1.005;
+  }
+
+  /**
+   * Calcola risk/reward ratio da prezzi
+   */
+  private calculateRiskRewardFromPrices(entryPrice: number, targetPrice: number, stopLossPrice: number): string {
+    const risk = Math.abs(entryPrice - stopLossPrice);
+    const reward = Math.abs(targetPrice - entryPrice);
     const ratio = reward / risk;
     return `1:${ratio.toFixed(1)}`;
   }
 
   /**
-   * Calcola potenziale profitto percentuale
+   * Calcola potenziale profitto percentuale da prezzi
+   */
+  private calculatePotentialProfitFromPrices(entryPrice: number, targetPrice: number, direction: string, leverage: number): string {
+    const priceChange = direction === 'LONG'
+      ? (targetPrice - entryPrice) / entryPrice
+      : (entryPrice - targetPrice) / entryPrice;
+
+    const leveragedProfit = priceChange * leverage * 100;
+    return leveragedProfit.toFixed(1);
+  }
+
+  /**
+   * Calcola risk/reward ratio (legacy method)
+   */
+  private calculateRiskReward(signal: TradeSignal): string {
+    const targetPrice = this.getTargetPrice(signal);
+    const stopLossPrice = this.getStopLossPrice(signal);
+    return this.calculateRiskRewardFromPrices(signal.entryPrice, targetPrice, stopLossPrice);
+  }
+
+  /**
+   * Calcola potenziale profitto percentuale (legacy method)
    */
   private calculatePotentialProfit(signal: TradeSignal): string {
-    const priceChange = signal.direction === 'LONG'
-      ? (signal.targetPrice - signal.entryPrice) / signal.entryPrice
-      : (signal.entryPrice - signal.targetPrice) / signal.entryPrice;
-
-    const leveragedProfit = priceChange * signal.leverage * 100;
-    return leveragedProfit.toFixed(1);
+    const targetPrice = this.getTargetPrice(signal);
+    return this.calculatePotentialProfitFromPrices(signal.entryPrice, targetPrice, signal.direction, signal.leverage);
   }
 
   /**

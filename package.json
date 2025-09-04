@@ -20,7 +20,7 @@
     "frontend:dev": "cd packages/frontend && bun run dev",
     "frontend:build": "cd packages/frontend && bun run build",
     "frontend:preview": "cd packages/frontend && bun run preview",
-    "build": "bun build packages/worker/src/trade.ts packages/worker/src/scanner.ts packages/worker/src/analyze.ts packages/api/src/index.ts --outdir ./dist --target node",
+    "build": "bun build packages/worker/src/trade.ts packages/worker/src/scanner.ts packages/worker/src/analyze.ts packages/api/src/server.ts --outdir ./dist --target node",
     "build:tsc": "tsc -b packages/core packages/db packages/strategies packages/worker packages/api",
     "clean": "rm -rf dist && find packages -name '*.js' -delete"
   },
