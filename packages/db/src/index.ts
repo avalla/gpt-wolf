@@ -82,6 +82,35 @@ export function saveTradeSignal(signal: TradeSignal) {
     const currentTime = formatDateISO();
     const expirationTime = formatDateISO(now + 3600000); // 1 hour from now
     
+    // Calcola targetPrice se mancante ma sono presenti le percentuali
+    let targetPrice = signal.targetPrice;
+    let stopLoss = signal.stopLoss;
+    
+    if (!targetPrice && signal.takeProfitPercent) {
+      targetPrice = signal.direction === 'LONG'
+        ? signal.entryPrice * (1 + signal.takeProfitPercent / 100)
+        : signal.entryPrice * (1 - signal.takeProfitPercent / 100);
+    }
+    
+    if (!stopLoss && signal.stopLossPercent) {
+      stopLoss = signal.direction === 'LONG'
+        ? signal.entryPrice * (1 - signal.stopLossPercent / 100)
+        : signal.entryPrice * (1 + signal.stopLossPercent / 100);
+    }
+    
+    // Fallback se ancora mancanti
+    if (!targetPrice) {
+      targetPrice = signal.direction === 'LONG'
+        ? signal.entryPrice * 1.01 // +1% default
+        : signal.entryPrice * 0.99; // -1% default
+    }
+    
+    if (!stopLoss) {
+      stopLoss = signal.direction === 'LONG'
+        ? signal.entryPrice * 0.995 // -0.5% default
+        : signal.entryPrice * 1.005; // +0.5% default
+    }
+    
     const query = db.prepare(
       'INSERT INTO trade_signals (symbol, direction, entryPrice, targetPrice, stopLoss, leverage, orderType, reason, timestamp, timeframe, validUntil, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
@@ -89,8 +118,8 @@ export function saveTradeSignal(signal: TradeSignal) {
       signal.symbol,
       signal.direction,
       signal.entryPrice,
-      signal.targetPrice,
-      signal.stopLoss,
+      targetPrice,
+      stopLoss,
       signal.leverage,
       signal.orderType || 'Market',
       signal.reason,

@@ -1,129 +1,198 @@
-# GPT-Wolf Trading Bot
+# 🐺 GPT-Wolf Trading Bot
 
-Un bot di trading aggressivo per il mercato dei futures su Bybit, progettato per massimizzare i guadagni utilizzando strategie ad alta leva (25x-100x).
+An aggressive futures trading bot for Bybit, designed to maximize profits using high-leverage strategies (25x-100x) with advanced market analysis and automated position management.
 
-## Caratteristiche
+## ✨ Features
 
-- 🔍 **Scanner di mercato**: analizza tutti i contratti perpetui su Bybit per identificare opportunità di trading
-- 💰 **Strategie aggressive**: utilizza leve alte (25x-100x) per massimizzare i profitti
-- 📊 **Analisi tecnica avanzata**: monitora funding rate, liquidazioni, CVD e anomalie di volume
-- 🤖 **Trading automatizzato**: genera segnali di trading basati su strategie multiple
-- 📱 **Notifiche Telegram**: ricevi segnali di trading in tempo reale sul tuo telefono
-- 💾 **Database SQLite**: storage locale per storico segnali e analisi
+- 🔍 **Market Scanner**: Analyzes all Bybit perpetual contracts to identify trading opportunities
+- 💰 **Aggressive Strategies**: 7 high-leverage strategies (25x-100x) for maximum profit potential
+- 📊 **Advanced Technical Analysis**: Monitors funding rates, liquidations, CVD, and volume anomalies
+- 🤖 **Automated Trading**: Generates and executes trading signals with automatic position management
+- 📱 **Telegram Notifications**: Real-time trading signals delivered to your phone
+- 💾 **SQLite Database**: Local storage for signal history and performance analysis
+- 🎯 **Risk Management**: Built-in stop-loss, take-profit, and position sizing
 
-## Struttura del Progetto
+## 🏗️ Project Structure
 
-Il progetto è strutturato come un monorepo Bun con i seguenti pacchetti:
+This project is structured as a Bun monorepo with the following packages:
 
-- `@gpt-wolf/worker`: componente principale che utilizza l'API Bybit
-- `@gpt-wolf/core`: tipi, funzionalità condivise e notifiche Telegram
-- `@gpt-wolf/db`: database SQLite per storage locale
-- `@gpt-wolf/strategies`: implementazione di strategie di trading aggressive
-- `@gpt-wolf/frontend`: dashboard React per monitoraggio segnali
-- `@gpt-wolf/api`: server API per interfaccia web
+- `@gpt-wolf/worker`: Main trading engine using Bybit API
+- `@gpt-wolf/core`: Shared types, utilities, and Telegram notifications
+- `@gpt-wolf/db`: SQLite database for local storage
+- `@gpt-wolf/strategies`: Implementation of 7 aggressive trading strategies
+- `@gpt-wolf/frontend`: React dashboard for signal monitoring
+- `@gpt-wolf/api`: REST API server for web interface
 
-## Installazione
+## 🚀 Installation
 
 ```bash
-# Clona il repository
+# Clone the repository
 git clone https://github.com/avalla/gpt-wolf.git
 cd gpt-wolf
 
-# Installa le dipendenze
+# Install dependencies
 bun install
 
-# Copia il file di esempio .env e configuralo
-cp .env.example .env
-# Modifica il file .env con le tue chiavi API
+# Copy environment file and configure
+cp env.example .env
+# Edit .env with your API keys
 ```
 
-## Configurazione
+## ⚙️ Configuration
 
-Modifica il file `.env` con le tue chiavi API Bybit e Telegram:
+Edit the `.env` file with your Bybit and Telegram API keys:
 
-```
-# Bybit API Keys
-BYBIT_API_KEY=your_api_key_here
-BYBIT_API_SECRET=your_api_secret_here
-TESTNET=false
+```env
+# Bybit API Configuration
+BYBIT_API_KEY=your_bybit_api_key_here
+BYBIT_API_SECRET=your_bybit_api_secret_here
+TESTNET=true
 
-# Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-
-# Trading Config
-DEFAULT_LEVERAGE=50
+# Trading Configuration
+TRADING_CAPITAL=100
+DEFAULT_LEVERAGE=25
 MAX_LEVERAGE=100
-RISK_PERCENTAGE=5
-TRADING_CAPITAL=1000
+RISK_PERCENTAGE=2
+
+# Strategy Configuration (comma-separated, leave empty for all)
+STRATEGIES=
+
+# Telegram Notifications (optional)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_chat_id
 ```
 
-## Utilizzo
+## 🎮 Usage
 
+### Quick Start (Recommended for Testing)
 ```bash
-# Avvia il sistema completo (API + Frontend + Trading Bot)
+# 1. Set up testnet environment
+cp env.example .env
+# Edit .env: set TESTNET=true, TRADING_CAPITAL=100
+
+# 2. Start trading bot
+bun run packages/worker/src/trade.ts
+
+# 3. Monitor signals in terminal or Telegram
+```
+
+### Full System
+```bash
+# Start complete system (API + Frontend + Trading Bot)
 bun run dev:full
 
-# Solo bot di trading
-bun run trade
+# Individual components
+bun run trade                 # Trading bot only
+bun run frontend:dev         # Frontend dashboard
+bun run api:dev             # API server only
 
-# Solo frontend
-bun run frontend:dev
-
-# Solo API server
-bun run api:dev
+# Run specific strategies
+STRATEGIES=liquidationcascade,cvddivergence bun run trade
 ```
 
-## Strategie di Trading
+## 📈 Trading Strategies
 
-Il bot implementa diverse strategie di trading aggressive:
+The bot implements 7 aggressive trading strategies:
 
-1. **Scalping Ultra-Rapido**: movimenti micro con leva 75x-100x basati su volatilità
-2. **Funding Rate Contrarian**: posizioni contro funding rate estremi (>0.1%)
-3. **Liquidation Cluster Scalping**: sfrutta cluster di liquidazioni per cascate
-4. **Volume Anomaly**: identifica manipolazioni tramite anomalie di volume
-5. **Liquidation Heatmap**: mappa densità liquidazioni per entry precise
+### 🎯 **Volume Spike Detection**
+- **Leverage**: 25-75x
+- **Target**: 0.5-2.0%
+- **Timeframe**: 5-15m
+- **Logic**: Detects unusual volume spikes indicating potential breakouts
 
-## Sistema di Notifiche e Storage
+### ⚡ **Liquidation Cascade**
+- **Leverage**: 15-50x
+- **Target**: 0.8-2.3%
+- **Timeframe**: 5m
+- **Logic**: Anticipates liquidation cascades from liquidation map imbalances
 
-### **SQLite Database** (Storage Primario)
-- 💾 **Salvataggio persistente** di tutti i segnali di trading
-- 📊 **Storico completo** per analisi e backtesting
-- 🔍 **Query locali** per performance tracking
-- 📈 **Integrazione con dashboard** per visualizzazione
+### 📊 **CVD Divergence**
+- **Leverage**: 20-60x
+- **Target**: 0.6-1.4%
+- **Timeframe**: 15m
+- **Logic**: Analyzes Cumulative Volume Delta divergences between futures and spot
 
-### **Telegram Bot** (Notifiche Real-Time)
-- 📱 **Alert immediati** su mobile per ogni segnale
-- ⚡ **Formato ottimizzato** con R/R ratio e profit potenziale
-- 🚨 **Solo notifiche** - non storage alternativo
-- 💬 **Messaggi professionali** con emoji e Markdown
+### 📰 **News Momentum**
+- **Leverage**: 25-75x
+- **Target**: 1.0-4.0%
+- **Timeframe**: 1m
+- **Logic**: Reacts to market events and news within 5 seconds
 
-### Configurazione Telegram Bot:
-1. Crea bot con [@BotFather](https://t.me/BotFather)
-2. Ottieni `TELEGRAM_BOT_TOKEN`
-3. Trova il tuo `TELEGRAM_CHAT_ID`
-4. Aggiungi le variabili al file `.env`
+### 📋 **Orderbook Imbalance**
+- **Leverage**: 30-100x
+- **Target**: 0.15-0.5%
+- **Timeframe**: 30s
+- **Logic**: Micro-scalping based on bid/ask ratio extremes
 
-## ⚠️ Avvertenze
+### 🔄 **Cross-Exchange Arbitrage**
+- **Leverage**: 10-50x
+- **Target**: Based on price convergence
+- **Timeframe**: 5m
+- **Logic**: Exploits price differences between exchanges
 
-- **RISCHIO ELEVATO**: Le strategie implementate sono estremamente aggressive e comportano un alto rischio di perdita del capitale
-- **SOLO PER TRADER ESPERTI**: L'utilizzo di leve 25x-100x è adatto solo a trader molto esperti
-- **TESTARE IN TESTNET**: Si consiglia vivamente di testare il bot in modalità testnet prima di utilizzarlo con fondi reali
+### 🐋 **Whale Movement Detection**
+- **Leverage**: 20-60x
+- **Target**: 0.8-2.0%
+- **Timeframe**: 30m
+- **Logic**: Follows large transactions and smart money flows
 
-## Funzionalità Implementate
+## 🔔 Notifications & Storage System
 
-- [x] **Dashboard React** con monitoraggio real-time
-- [x] **Notifiche Telegram** per tutti i segnali
-- [x] **Database SQLite** per storage locale
-- [x] **5+ Strategie** aggressive ad alta leva
-- [x] **Liquidation Heatmap** per visualizzazione cluster
-- [x] **API REST** per integrazione frontend
-- [x] **Monorepo Bun** con TypeScript
+### **SQLite Database** (Primary Storage)
+- 💾 **Persistent storage** of all trading signals
+- 📊 **Complete history** for analysis and backtesting
+- 🔍 **Local queries** for performance tracking
+- 📈 **Dashboard integration** for visualization
 
-## Roadmap Future
+### **Telegram Bot** (Real-Time Notifications)
+- 📱 **Instant mobile alerts** for every signal
+- ⚡ **Optimized format** with R/R ratio and profit potential
+- 🚨 **Notifications only** - not alternative storage
+- 💬 **Professional messages** with emojis and Markdown
 
-- [ ] Trading automatico con esecuzione ordini
-- [ ] Backtesting engine per strategie
-- [ ] Supporto exchange multipli
-- [ ] Mobile app nativa
-- [ ] Machine learning per pattern recognition
+### Telegram Bot Setup:
+1. Create bot with [@BotFather](https://t.me/BotFather)
+2. Get your `TELEGRAM_BOT_TOKEN`
+3. Find your `TELEGRAM_CHAT_ID`
+4. Add variables to `.env` file
+
+## ⚠️ Risk Warning
+
+- **HIGH RISK**: The implemented strategies are extremely aggressive and carry high risk of capital loss
+- **EXPERT TRADERS ONLY**: Using 25x-100x leverage is suitable only for very experienced traders
+- **TEST IN TESTNET**: Strongly recommended to test the bot in testnet mode before using real funds
+- **START SMALL**: Begin with minimal capital ($50-100) to test strategy performance
+- **MONITOR CLOSELY**: High-frequency trading requires constant monitoring
+
+## ✅ Implemented Features
+
+- [x] **React Dashboard** with real-time monitoring
+- [x] **Telegram Notifications** for all signals
+- [x] **SQLite Database** for local storage
+- [x] **7 Aggressive Strategies** with high leverage
+- [x] **Automatic Position Management** with SL/TP
+- [x] **REST API** for frontend integration
+- [x] **Bun Monorepo** with TypeScript
+- [x] **Risk Management** with position sizing
+- [x] **Strategy Filtering** and configuration
+
+## 🗺️ Future Roadmap
+
+- [ ] Advanced backtesting engine
+- [ ] Multi-exchange support (Binance, OKX)
+- [ ] Mobile app for iOS/Android
+- [ ] Machine learning pattern recognition
+- [ ] Portfolio optimization algorithms
+- [ ] Social trading features
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our contributing guidelines and submit pull requests for any improvements.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 📞 Support
+
+For support and questions, please open an issue on GitHub or contact the development team.

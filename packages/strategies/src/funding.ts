@@ -17,8 +17,10 @@ interface TradeSignal {
   symbol: string;
   direction: 'LONG' | 'SHORT';
   entryPrice: number;
-  targetPrice: number;
-  stopLoss: number;
+  targetPrice?: number;
+  stopLoss?: number;
+  takeProfitPercent?: number;
+  stopLossPercent?: number;
   leverage: number;
   orderType: 'Market' | 'Limit' | 'Conditional' | 'TWAP' | 'Iceberg';
   reason: string;
@@ -142,8 +144,8 @@ export function fundingRateStrategy(
       symbol: market.symbol,
       direction,
       entryPrice: optimalEntry,
-      targetPrice,
-      stopLoss,
+      takeProfitPercent: tpPercent * 100, // Converti in percentuale
+      stopLossPercent: slPercent * 100,   // Converti in percentuale
       leverage,
       reason: `Funding ${(market.fundingRate * 100).toFixed(4)}% | TP: ${(tpPercent*100).toFixed(2)}% | SL: ${(slPercent*100).toFixed(2)}% | ${direction === 'LONG' ? 'Short squeeze' : 'Long squeeze'}`,
       timestamp: now,

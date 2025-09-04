@@ -35,8 +35,10 @@ export interface TradeSignal {
   symbol: string;
   direction: 'LONG' | 'SHORT';
   entryPrice: number;
-  targetPrice: number;
-  stopLoss: number;
+  targetPrice?: number;
+  stopLoss?: number;
+  takeProfitPercent?: number;
+  stopLossPercent?: number;
   leverage: number;
   reason: string;
   timestamp?: number;

@@ -5,6 +5,12 @@ import path from 'path';
 import fs from 'fs';
 import { saveTradeSignal, getActiveTradeSignals, updateSignalStatus, cleanupInvalidDates } from '@gpt-wolf/db';
 import { createTelegramNotifier } from '@gpt-wolf/core';
+import { liquidationCascadeStrategy } from '../../strategies/src/liquidation-cascade';
+import { cvdDivergenceStrategy } from '../../strategies/src/cvd-divergence';
+import { newsMomentumStrategy } from '../../strategies/src/news-momentum';
+import { orderbookImbalanceStrategy } from '../../strategies/src/orderbook-imbalance';
+import { crossExchangeArbitrageStrategy } from '../../strategies/src/cross-exchange-arbitrage';
+import { whaleMovementStrategy } from '../../strategies/src/whale-movement';
 
 // Carica variabili d'ambiente
 dotenv.config();
@@ -44,8 +50,8 @@ function showActiveSignals(): void {
         signal.symbol.padEnd(12) +
         signal.direction.padEnd(10) +
         signal.entryPrice.toFixed(4).padEnd(12) +
-        signal.targetPrice.toFixed(4).padEnd(12) +
-        signal.stopLoss.toFixed(4).padEnd(12) +
+        (signal.targetPrice?.toFixed(4) || signal.takeProfitPercent?.toFixed(2) + '%').padEnd(12) +
+        (signal.stopLoss?.toFixed(4) || signal.stopLossPercent?.toFixed(2) + '%').padEnd(12) +
         `${signal.leverage}x`.padEnd(8) +
         (signal.orderType || 'Market').padEnd(12) +
         (signal.timeframe || '15m').padEnd(10) +
@@ -103,6 +109,16 @@ async function runTradingSystem() {
     }
 
     const allStrategies = await importAllStrategies(strategiesPath);
+    
+    // Aggiungi tutte le strategie aggressive importate direttamente
+    allStrategies.push(
+      liquidationCascadeStrategy,
+      cvdDivergenceStrategy,
+      newsMomentumStrategy,
+      orderbookImbalanceStrategy,
+      crossExchangeArbitrageStrategy,
+      whaleMovementStrategy
+    );
 
     // Configurazione delle strategie
     const config = {
@@ -199,8 +215,8 @@ async function runTradingSystem() {
         signal.symbol.padEnd(12) +
         signal.direction.padEnd(10) +
         signal.entryPrice.toFixed(4).padEnd(12) +
-        signal.targetPrice.toFixed(4).padEnd(12) +
-        signal.stopLoss.toFixed(4).padEnd(12) +
+        (signal.targetPrice?.toFixed(4) || signal.takeProfitPercent?.toFixed(2) + '%').padEnd(12) +
+        (signal.stopLoss?.toFixed(4) || signal.stopLossPercent?.toFixed(2) + '%').padEnd(12) +
         `${signal.leverage}x`.padEnd(8) +
         (signal.orderType || 'Market').padEnd(12) +
         (signal.timeframe || '15m').padEnd(10) +
@@ -405,24 +421,57 @@ async function startTradingBot(): Promise<void> {
 }
 
 /**
- * Imposta stop loss e take profit
+ * Calcola prezzi TP/SL da percentuali
+ */
+function calculateTPSLPrices(entryPrice: number, direction: 'LONG' | 'SHORT', tpPercent: number, slPercent: number) {
+  const takeProfit = direction === 'LONG' 
+    ? entryPrice * (1 + tpPercent / 100)
+    : entryPrice * (1 - tpPercent / 100);
+    
+  const stopLoss = direction === 'LONG'
+    ? entryPrice * (1 - slPercent / 100) 
+    : entryPrice * (1 + slPercent / 100);
+    
+  return { takeProfit, stopLoss };
+}
+
+/**
+ * Imposta stop loss e take profit usando percentuali per scalping
  */
 async function setStopLossAndTakeProfit(signal: any, orderId?: string): Promise<void> {
   try {
     // Attendi un momento per assicurarsi che la posizione sia aperta
     await new Promise(resolve => setTimeout(resolve, 1000));
 
+    // Usa percentuali se disponibili, altrimenti prezzi assoluti
+    let takeProfit: number, stopLoss: number;
+    
+    if (signal.takeProfitPercent && signal.stopLossPercent) {
+      const prices = calculateTPSLPrices(
+        signal.entryPrice, 
+        signal.direction, 
+        signal.takeProfitPercent, 
+        signal.stopLossPercent
+      );
+      takeProfit = prices.takeProfit;
+      stopLoss = prices.stopLoss;
+      console.log(`📊 Usando TP: ${signal.takeProfitPercent}% SL: ${signal.stopLossPercent}%`);
+    } else {
+      takeProfit = signal.targetPrice || signal.entryPrice * 1.01;
+      stopLoss = signal.stopLoss || signal.entryPrice * 0.99;
+    }
+
     await client.setTradingStop({
       category: 'linear',
       symbol: signal.symbol,
-      stopLoss: signal.stopLoss.toString(),
-      takeProfit: signal.targetPrice.toString(),
+      stopLoss: stopLoss.toString(),
+      takeProfit: takeProfit.toString(),
       tpTriggerBy: 'LastPrice',
       slTriggerBy: 'LastPrice',
       positionIdx: 0
     });
 
-    console.log(`🎯 SL/TP impostati per ${signal.symbol}: SL=${signal.stopLoss} TP=${signal.targetPrice}`);
+    console.log(`🎯 SL/TP impostati per ${signal.symbol}: SL=${stopLoss.toFixed(4)} TP=${takeProfit.toFixed(4)}`);
   } catch (error) {
     console.error(`❌ Errore impostazione SL/TP per ${signal.symbol}:`, error);
   }
