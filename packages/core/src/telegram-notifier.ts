@@ -86,9 +86,14 @@ export class TelegramNotifier {
     const leverage = `${signal.leverage}x`;
     const riskReward = this.calculateRiskReward(signal);
     const potentialProfit = this.calculatePotentialProfit(signal);
-    
     const orderTypeIcon = this.getOrderTypeIcon(signal.orderType);
-    
+
+    // Genera link Bybit per trading diretto
+    const bybitUrl = this.generateBybitTradingLink(signal.symbol);
+
+    // Determina se è un ordine condizionale basato su entry vs current price
+    const orderInstructions = this.getOrderInstructions(signal);
+
     return `🐺 *GPT WOLF SIGNAL*
 
 ${direction} *${signal.symbol}*
@@ -100,6 +105,8 @@ ${orderTypeIcon} Order: \`${signal.orderType || 'Market'}\`
 📊 R/R: \`${riskReward}\`
 💸 Potential: \`+${potentialProfit}%\`
 
+${orderInstructions}
+
 ⏰ *Creato:* ${signal.createdAt || new Date(signal.timestamp).toLocaleString('it-IT')}
 📅 *Timeframe:* ${signal.timeframe || '1h'}
 ⌛ *Valido fino:* ${signal.expiresAt || 'N/A'}
@@ -107,7 +114,34 @@ ${orderTypeIcon} Order: \`${signal.orderType || 'Market'}\`
 📝 *Reason:*
 \`${signal.reason}\`
 
+🔗 [Apri su Bybit](${bybitUrl})
+
 _Usa sempre gestione del rischio appropriata_`;
+  }
+
+  /**
+   * Genera istruzioni per l'ordine basate sul tipo
+   */
+  private getOrderInstructions(signal: TradeSignal): string {
+    if (signal.orderType === 'Conditional') {
+      if (signal.direction === 'LONG') {
+        return `⚠️ *ORDINE CONDIZIONALE*
+📈 Attendi breakout sopra $${signal.entryPrice.toFixed(4)}
+🎯 Entry automatico al trigger`;
+      } else {
+        return `⚠️ *ORDINE CONDIZIONALE*
+📉 Attendi breakdown sotto $${signal.entryPrice.toFixed(4)}
+🎯 Entry automatico al trigger`;
+      }
+    } else if (signal.orderType === 'Limit') {
+      return `📋 *ORDINE LIMIT*
+⏳ Entry a $${signal.entryPrice.toFixed(4)} quando disponibile`;
+    } else if (signal.orderType === 'Market') {
+      return `🚀 *ORDINE MARKET*
+⚡ Entry immediato al prezzo corrente`;
+    }
+
+    return '';
   }
 
   /**
@@ -127,7 +161,7 @@ _Usa sempre gestione del rischio appropriata_`;
     const priceChange = signal.direction === 'LONG'
       ? (signal.targetPrice - signal.entryPrice) / signal.entryPrice
       : (signal.entryPrice - signal.targetPrice) / signal.entryPrice;
-    
+
     const leveragedProfit = priceChange * signal.leverage * 100;
     return leveragedProfit.toFixed(1);
   }
@@ -147,13 +181,20 @@ _Usa sempre gestione del rischio appropriata_`;
   }
 
   /**
+   * Genera link Bybit per trading diretto
+   */
+  private generateBybitTradingLink(symbol: string): string {
+    return `https://www.bybit.com/trade/spot/${symbol}`;
+  }
+
+  /**
    * Testa connessione Telegram
    */
   async testConnection(): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/getMe`);
       const data = await response.json();
-      
+
       if (data.ok) {
         console.log(`[TELEGRAM] ✅ Bot connesso: ${data.result.username}`);
         return true;

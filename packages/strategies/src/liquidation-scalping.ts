@@ -1,5 +1,6 @@
 import { MarketSummary, TradeSignal, StrategyConfig } from '@gpt-wolf/db';
 import { LiquidationAnalyzer } from './liquidation-analyzer';
+import { getOptimalTimeframe, calculateSignalValidity, getOptimalOrderType, createTimeFields } from './strategy-utils';
 
 /**
  * Strategia di scalping basata su liquidation maps
@@ -13,7 +14,8 @@ export function liquidationScalpingStrategy(
   config: StrategyConfig
 ): TradeSignal[] {
   const signals: TradeSignal[] = [];
-  const now = Date.now();
+  const timeframe = getOptimalTimeframe('scalping');
+  const validUntil = calculateSignalValidity(timeframe);
 
   // Analizza liquidazioni per tutti i mercati
   const liquidationAnalysis = LiquidationAnalyzer.analyzeLiquidations(markets);
@@ -53,6 +55,9 @@ export function liquidationScalpingStrategy(
       analysis
     );
 
+    const orderType = getOptimalOrderType('scalping', leverage, 'HIGH');
+    const timeFields = createTimeFields(timeframe, validUntil);
+
     signals.push({
       symbol: market.symbol,
       direction,
@@ -60,8 +65,9 @@ export function liquidationScalpingStrategy(
       targetPrice,
       stopLoss,
       leverage,
+      orderType,
       reason: `Liquidation Scalping ${direction} | Cluster @${targetCluster.center.toFixed(2)} (${targetCluster.strength} levels) | Net Liq: $${(analysis.netLiquidations/1000).toFixed(0)}K`,
-      timestamp: now
+      ...timeFields
     });
   }
 

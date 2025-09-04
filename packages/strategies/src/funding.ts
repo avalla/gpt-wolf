@@ -35,6 +35,11 @@ interface StrategyConfig {
   riskPercentage: number;
 }
 
+interface Ticker {
+  lastPrice: string;
+  priceChangePercent: string;
+}
+
 /**
  * Leve realistiche basate sui limiti Bybit
  */
@@ -44,10 +49,10 @@ function getRealisticLeverage(symbol: string, fundingRate: number): number {
     'AVAXUSDT': 25, 'LINKUSDT': 25, 'DOGEUSDT': 25,
     'RADUSDT': 12.5, // Limite reale per RADUSDT
   };
-  
+
   const maxLeverage = leverageLimits[symbol] || 20; // Default conservativo
   const fundingBasedLeverage = Math.abs(fundingRate) * 20000; // Scala ridotta
-  
+
   return Math.max(5, Math.min(Math.floor(fundingBasedLeverage), maxLeverage));
 }
 
@@ -59,12 +64,12 @@ function getOptimalOrderType(fundingRate: number, leverage: number): 'Market' | 
   if (Math.abs(fundingRate) > 0.002) {
     return leverage > 25 ? 'Conditional' : 'Market'; // Conditional per leve alte
   }
-  
+
   // Per funding moderati usiamo limit orders
   if (Math.abs(fundingRate) > 0.001) {
     return 'Limit';
   }
-  
+
   return 'TWAP'; // Per funding bassi, accumula gradualmente
 }
 
@@ -75,62 +80,72 @@ function getOptimalOrderType(fundingRate: number, leverage: number): 'Market' | 
  */
 export function fundingRateStrategy(
   markets: MarketSummary[],
-  config: StrategyConfig
+  config: StrategyConfig,
+  tickers: Ticker[]
 ): TradeSignal[] {
   const signals: TradeSignal[] = [];
   const now = Date.now();
-  
+
   // Filtra per funding rate estremi (>0.1% è considerato alto)
   const extremeFunding = markets
     .filter(m => Math.abs(m.fundingRate) > 0.001 && m.volume24h > 1000000) // >0.1% e volume >$1M
     .sort((a, b) => Math.abs(b.fundingRate) - Math.abs(a.fundingRate));
-  
+
   // Genera segnali per i top 3 funding rate estremi
   extremeFunding.slice(0, 3).forEach(market => {
-    // Determina la direzione (opposta al sentiment del mercato)
-    // Se funding rate è positivo, il mercato è long-biased, quindi andiamo short
-    const direction = market.fundingRate > 0 ? 'SHORT' : 'LONG';
-    
-    // Usa leve realistiche basate sui limiti Bybit
+    const ticker = tickers.find(t => t.symbol === market.symbol);
+    if (!ticker) return;
+
+    // Calcola entry price ottimale basato su funding rate e volatilità
+    const currentPrice = parseFloat(ticker.lastPrice);
+    const volatility = parseFloat(ticker.priceChangePercent) / 100;
+
+    // Per funding rate negativo (short squeeze), entry leggermente sopra prezzo corrente
+    // Per funding rate positivo (long squeeze), entry leggermente sotto prezzo corrente
+    let optimalEntry: number;
+    if (market.fundingRate < 0) {
+      // Short squeeze - aspetta breakout sopra resistenza
+      optimalEntry = currentPrice * (1 + Math.abs(volatility) * 0.3);
+    } else {
+      // Long squeeze - aspetta pullback sotto supporto
+      optimalEntry = currentPrice * (1 - Math.abs(volatility) * 0.3);
+    }
+
+    const direction = market.fundingRate < 0 ? 'LONG' : 'SHORT';
     const leverage = getRealisticLeverage(market.symbol, market.fundingRate);
-    
-    // Determina il tipo di ordine ottimale
-    const orderType = getOptimalOrderType(market.fundingRate, leverage);
-    
-    // Calcola target e stop loss aggressivi
-    const entryPrice = market.price;
-    const stopLossPercentage = 100 / leverage * 0.7; // 70% del margine disponibile
-    const takeProfitPercentage = stopLossPercentage * 4; // Rapporto rischio/rendimento 1:4
-    
-    // Calcola prezzi target e stop loss
-    const targetPrice = direction === 'LONG' 
-      ? entryPrice * (1 + takeProfitPercentage / 100)
-      : entryPrice * (1 - takeProfitPercentage / 100);
-    
+
+    // Calcola TP e SL basati su entry ottimale
+    const targetPrice = direction === 'LONG'
+      ? optimalEntry * (1 + (Math.abs(market.fundingRate) * leverage * 0.8))
+      : optimalEntry * (1 - (Math.abs(market.fundingRate) * leverage * 0.8));
+
     const stopLoss = direction === 'LONG'
-      ? entryPrice * (1 - stopLossPercentage / 100)
-      : entryPrice * (1 + stopLossPercentage / 100);
-    
-    // Calcola validità del segnale basata sul prossimo funding (8h max)
-    const validityHours = 8; // Funding rate si aggiorna ogni 8h
-    const validUntil = now + (validityHours * 60 * 60 * 1000);
-    
+      ? optimalEntry * (1 - (Math.abs(market.fundingRate) * 2))
+      : optimalEntry * (1 + (Math.abs(market.fundingRate) * 2));
+
+    const timeframe = '1h'; // Timeframe di riferimento per funding rate
+    const validUntil = now + (8 * 60 * 60 * 1000); // Funding rate si aggiorna ogni 8h
+    const orderType = getOptimalOrderType(market.fundingRate, leverage);
+    const timeFields = {
+      createdAt: new Date(now).toLocaleString('it-IT'),
+      expiresAt: new Date(validUntil).toLocaleString('it-IT')
+    };
+
     signals.push({
       symbol: market.symbol,
       direction,
-      entryPrice,
+      entryPrice: optimalEntry,
       targetPrice,
       stopLoss,
       leverage,
-      orderType,
-      reason: `Funding rate ${(market.fundingRate * 100).toFixed(4)}% - Strategia di arbitraggio`,
+      reason: `Funding rate ${(market.fundingRate * 100).toFixed(4)}% - ${direction === 'LONG' ? 'Short squeeze' : 'Long squeeze'} previsto`,
       timestamp: now,
-      timeframe: '1h', // Timeframe di riferimento per funding rate
+      timeframe,
       validUntil,
-      createdAt: new Date(now).toLocaleString('it-IT'),
-      expiresAt: new Date(validUntil).toLocaleString('it-IT')
+      orderType,
+      ...timeFields
     });
   });
-  
+
   return signals;
 }

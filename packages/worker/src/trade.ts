@@ -148,10 +148,10 @@ async function runTradingSystem() {
 
     // 4. Mostra e salva i segnali
     console.log(`\n✅ Generati ${limitedSignals.length} segnali di trading:`);
-    console.log('='.repeat(80));
+    console.log('='.repeat(100));
     console.log('SIMBOLO'.padEnd(12) + 'DIREZIONE'.padEnd(10) + 'PREZZO'.padEnd(12) +
-                'TARGET'.padEnd(12) + 'STOP'.padEnd(12) + 'LEVA'.padEnd(8) + 'MOTIVO');
-    console.log('-'.repeat(80));
+      'TARGET'.padEnd(12) + 'STOP'.padEnd(12) + 'LEVA'.padEnd(8) + 'ORDINE'.padEnd(12) + 'TIMEFRAME'.padEnd(10) + 'MOTIVO');
+    console.log('-'.repeat(100));
 
     for (const signal of limitedSignals) {
       console.log(
@@ -161,12 +161,14 @@ async function runTradingSystem() {
         signal.targetPrice.toFixed(4).padEnd(12) +
         signal.stopLoss.toFixed(4).padEnd(12) +
         `${signal.leverage}x`.padEnd(8) +
+        (signal.orderType || 'Market').padEnd(12) +
+        (signal.timeframe || '15m').padEnd(10) +
         signal.reason
       );
 
     }
 
-    console.log('='.repeat(80));
+    console.log('='.repeat(100));
     console.log('\n✅ Sistema di trading completato');
 
     // Calcola il potenziale profitto se tutti i segnali raggiungono il target

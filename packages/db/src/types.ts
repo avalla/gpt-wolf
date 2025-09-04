@@ -39,7 +39,12 @@ export interface TradeSignal {
   stopLoss: number;
   leverage: number;
   reason: string;
-  timestamp: number;
+  timestamp?: number;
+  orderType?: string;
+  timeframe?: string;
+  validUntil?: number;
+  createdAt?: string;
+  expiresAt?: string;
 }
 
 /**

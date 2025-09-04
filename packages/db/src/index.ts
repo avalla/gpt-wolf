@@ -15,8 +15,13 @@ function initializeSchema() {
       targetPrice REAL NOT NULL,
       stopLoss REAL NOT NULL,
       leverage INTEGER NOT NULL,
+      orderType TEXT DEFAULT 'Market',
       reason TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
+      timeframe TEXT DEFAULT '15m',
+      validUntil INTEGER,
+      createdAt TEXT,
+      expiresAt TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -45,8 +50,11 @@ export const database = db;
 
 export function saveTradeSignal(signal: TradeSignal) {
   try {
+    const now = Date.now();
+    const currentTime = new Date().toISOString();
+    
     const query = db.prepare(
-      'INSERT INTO trade_signals (symbol, direction, entryPrice, targetPrice, stopLoss, leverage, reason, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO trade_signals (symbol, direction, entryPrice, targetPrice, stopLoss, leverage, orderType, reason, timestamp, timeframe, validUntil, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     query.run(
       signal.symbol,
@@ -55,8 +63,13 @@ export function saveTradeSignal(signal: TradeSignal) {
       signal.targetPrice,
       signal.stopLoss,
       signal.leverage,
+      signal.orderType || 'Market',
       signal.reason,
-      signal.timestamp
+      signal.timestamp || now,
+      signal.timeframe || '15m',
+      signal.validUntil || (now + 3600000), // 1 hour from now
+      signal.createdAt || currentTime,
+      signal.expiresAt || new Date(now + 3600000).toISOString()
     );
   } catch (error) {
     console.error('[DB] Errore nel salvataggio del segnale:', error);
@@ -75,8 +88,13 @@ export function getActiveTradeSignals(): TradeSignal[] {
       targetPrice: row.targetPrice,
       stopLoss: row.stopLoss,
       leverage: row.leverage,
+      orderType: row.orderType,
       reason: row.reason,
-      timestamp: row.timestamp
+      timestamp: row.timestamp,
+      timeframe: row.timeframe,
+      validUntil: row.validUntil,
+      createdAt: row.createdAt,
+      expiresAt: row.expiresAt
     }));
   } catch (error) {
     console.error('[DB] Errore nel recupero dei segnali:', error);

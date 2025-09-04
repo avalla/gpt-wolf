@@ -2,6 +2,7 @@ import { MarketSummary, TradeSignal, StrategyConfig } from './types';
 import { FundingAnalyzer } from './funding-analyzer';
 import { LiquidationAnalyzer } from './liquidation-analyzer';
 import { TechnicalAnalyzer } from './technical-analyzer';
+import { getOptimalTimeframe, calculateSignalValidity, getOptimalOrderType, createTimeFields } from './strategy-utils';
 
 /**
  * Strategia ultra-aggressiva con leva massima
@@ -13,7 +14,8 @@ export function ultraAggressiveStrategy(
   config: StrategyConfig
 ): TradeSignal[] {
   const signals: TradeSignal[] = [];
-  const now = Date.now();
+  const timeframe = getOptimalTimeframe('aggressive');
+  const validUntil = calculateSignalValidity(timeframe);
 
   // 1. Analisi Funding Rate
   const fundingAnalyses = FundingAnalyzer.analyzeFundingRates(markets);
@@ -35,7 +37,9 @@ export function ultraAggressiveStrategy(
 
       const direction = fundingOp.direction === 'BEARISH' ? 'SHORT' : 'LONG';
       const leverage = Math.min(config.maxLeverage, 100);
-      
+      const orderType = getOptimalOrderType('aggressive', leverage, 'HIGH');
+      const timeFields = createTimeFields(timeframe, validUntil);
+
       const levels = TechnicalAnalyzer.calculateDynamicLevels(
         market.price,
         Math.abs(market.change24h) / 100,
@@ -49,8 +53,9 @@ export function ultraAggressiveStrategy(
         targetPrice: direction === 'LONG' ? levels.resistance2 : levels.support2,
         stopLoss: direction === 'LONG' ? levels.support1 : levels.resistance1,
         leverage,
+        orderType,
         reason: `Funding rate estremo: ${(fundingOp.currentRate * 100).toFixed(3)}%`,
-        timestamp: now,
+        ...timeFields,
         confidence: 85,
         urgency: 'HIGH'
       };
@@ -66,7 +71,9 @@ export function ultraAggressiveStrategy(
 
     const direction = liqOp.expectedDirection === 'BULLISH' ? 'LONG' : 'SHORT';
     const leverage = Math.min(config.maxLeverage, 75);
-    
+    const orderType = getOptimalOrderType('liquidation', leverage, 'HIGH');
+    const timeFields = createTimeFields(timeframe, validUntil);
+
     const levels = TechnicalAnalyzer.calculateDynamicLevels(
       market.price,
       Math.abs(market.change24h) / 100,
@@ -80,8 +87,9 @@ export function ultraAggressiveStrategy(
       targetPrice: direction === 'LONG' ? levels.resistance1 : levels.support1,
       stopLoss: direction === 'LONG' ? levels.support2 : levels.resistance2,
       leverage,
+      orderType,
       reason: `Liquidazioni massive: $${(liqOp.totalLiquidations / 1000000).toFixed(1)}M`,
-      timestamp: now,
+      ...timeFields,
       confidence: 80,
       urgency: 'HIGH'
     };
@@ -94,11 +102,13 @@ export function ultraAggressiveStrategy(
     const market = markets.find(m => m.symbol === pattern.symbol);
     if (!market) continue;
 
-    const leverage = Math.min(config.maxLeverage, 
-      pattern.type === 'FUNDING_REVERSAL' ? 100 : 
+    const leverage = Math.min(config.maxLeverage,
+      pattern.type === 'FUNDING_REVERSAL' ? 100 :
       pattern.type === 'VOLUME_BREAKOUT' ? 75 : 50
     );
-    
+    const orderType = getOptimalOrderType('aggressive', leverage, pattern.confidence > 80 ? 'HIGH' : 'MEDIUM');
+    const timeFields = createTimeFields(timeframe, validUntil);
+
     const levels = TechnicalAnalyzer.calculateDynamicLevels(
       market.price,
       Math.abs(market.change24h) / 100,
@@ -112,8 +122,9 @@ export function ultraAggressiveStrategy(
       targetPrice: pattern.direction === 'LONG' ? levels.resistance1 : levels.support1,
       stopLoss: pattern.direction === 'LONG' ? levels.support1 : levels.resistance1,
       leverage,
+      orderType,
       reason: pattern.reason,
-      timestamp: now,
+      ...timeFields,
       confidence: pattern.confidence,
       urgency: pattern.confidence > 80 ? 'HIGH' : 'MEDIUM'
     };
@@ -131,7 +142,7 @@ export function ultraAggressiveStrategy(
 function filterAndRankSignals(signals: TradeSignal[], config: StrategyConfig): TradeSignal[] {
   // Rimuovi duplicati per lo stesso simbolo
   const uniqueSignals = new Map<string, TradeSignal>();
-  
+
   for (const signal of signals) {
     const existing = uniqueSignals.get(signal.symbol);
     if (!existing || signal.confidence > existing.confidence) {
@@ -141,7 +152,7 @@ function filterAndRankSignals(signals: TradeSignal[], config: StrategyConfig): T
 
   // Converti in array e ordina per qualità
   const filteredSignals = Array.from(uniqueSignals.values());
-  
+
   return filteredSignals
     .filter(signal => signal.confidence >= 70) // Solo segnali ad alta confidenza
     .sort((a, b) => {
@@ -169,19 +180,19 @@ export function calculatePositionSize(
   const riskAmount = (availableCapital * maxRiskPerTrade) / 100;
   const entryPrice = signal.entryPrice;
   const stopLoss = signal.stopLoss;
-  
+
   // Calcola il rischio per unità
   const riskPerUnit = Math.abs(entryPrice - stopLoss);
-  
+
   // Calcola la quantità base senza leva
   const baseQuantity = riskAmount / riskPerUnit;
-  
+
   // Con la leva, possiamo aprire una posizione più grande
   const leveragedQuantity = baseQuantity * signal.leverage;
-  
+
   // Assicurati che non superi il capitale disponibile
   const maxQuantity = availableCapital / entryPrice;
-  
+
   return Math.min(leveragedQuantity, maxQuantity);
 }
 
@@ -194,10 +205,10 @@ export function calculatePotentialProfit(
 ): number {
   const entryPrice = signal.entryPrice;
   const targetPrice = signal.targetPrice;
-  
+
   const priceChange = Math.abs(targetPrice - entryPrice);
   const profitPerUnit = priceChange;
-  
+
   return profitPerUnit * positionSize * signal.leverage;
 }
 
@@ -207,19 +218,19 @@ export function calculatePotentialProfit(
 export function evaluateSignalRisk(signal: TradeSignal): RiskAssessment {
   const leverage = signal.leverage;
   const confidence = signal.confidence;
-  
+
   // Calcola il rischio base sulla leva
   let riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME' = 'LOW';
   if (leverage > 75) riskLevel = 'EXTREME';
   else if (leverage > 50) riskLevel = 'HIGH';
   else if (leverage > 25) riskLevel = 'MEDIUM';
-  
+
   // Aggiusta per la confidenza
-  const adjustedRisk = confidence > 85 ? 
-    (riskLevel === 'EXTREME' ? 'HIGH' : 
-     riskLevel === 'HIGH' ? 'MEDIUM' : 
+  const adjustedRisk = confidence > 85 ?
+    (riskLevel === 'EXTREME' ? 'HIGH' :
+      riskLevel === 'HIGH' ? 'MEDIUM' :
      riskLevel === 'MEDIUM' ? 'LOW' : 'LOW') : riskLevel;
-  
+
   return {
     level: adjustedRisk,
     leverage,

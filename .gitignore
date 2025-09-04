@@ -19,3 +19,4 @@ newrelic_agent.log
 packages/**/build
 
 tsconfig.tsbuildinfo
+*.sqlite
