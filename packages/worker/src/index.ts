@@ -1,4 +1,4 @@
-import { WebsocketClient } from 'bybit-api';
+import { WebsocketClient, RestClientV5 } from 'bybit-api';
 import { CVDData, FundingRate, LiquidationData, MarketData } from "@gpt-wolf/core";
 import * as dotenv from "dotenv";
 import { MarketSummary, TradeSignal, StrategyConfig } from "@gpt-wolf/db";
@@ -21,7 +21,7 @@ const config = {
 };
 
 // Client Bybit
-const wsClient = new WebSocketClient({
+const wsClient = new WebsocketClient({
   key: config.apiKey,
   secret: config.apiSecret,
   testnet: config.testnet,
@@ -170,45 +170,95 @@ function updateTrailingStop(pos: AdvancedPosition, mkt: Partial<MarketSummary>, 
   }
 }
 
+// Heartbeat per mostrare che il bot è attivo
+let heartbeatCount = 0;
+function showHeartbeat() {
+  heartbeatCount++;
+  const timestamp = new Date().toLocaleTimeString('it-IT');
+  const activePositionsCount = Object.values(activePositions).flat().length;
+  process.stdout.write(`\r💓 [${timestamp}] Bot attivo | Posizioni: ${activePositionsCount} | Heartbeat: ${heartbeatCount}`);
+}
+
 // Inizializzazione
 async function main() {
   console.log("🐺 GPT-Wolf trading bot avviato");
   console.log(`📊 Monitoraggio simboli: ${config.mainSymbols.join(", ")}`);
+  console.log(`🔗 Modalità: ${config.testnet ? 'TESTNET' : 'PRODUZIONE'}`);
+  console.log(`⚡ Leverage default: ${strategyEngineConfig.strategyConfig.defaultLeverage}x`);
+  console.log(`🎯 Risk per trade: ${strategyEngineConfig.strategyConfig.riskPercentage}%\n`);
+  
+  // Test connessione API
+  console.log('🔍 Test connessione API...');
+  try {
+    const serverTime = await restClient.getServerTime();
+    console.log(`✅ Connessione API OK - Server time: ${new Date(Number(serverTime.result.timeNow)).toLocaleString('it-IT')}`);
+  } catch (error) {
+    console.error('❌ Errore connessione API:', error);
+    process.exit(1);
+  }
   
   // Sottoscrizione ai websocket
+  console.log('📡 Connessione WebSocket...');
   wsClient.subscribe(config.mainSymbols.map(symbol => `tickers.${symbol}`));
   wsClient.subscribe(config.mainSymbols.map(symbol => `liquidation.${symbol}`));
   
   // Event handlers
   wsClient.on("update", handleWebSocketUpdate);
-  wsClient.on("response", (response) => console.log("WS response:", response));
-  wsClient.on("error", (err) => console.error("WS error:", err));
+  wsClient.on("response", (response) => {
+    console.log(`\n📨 WS Response: ${JSON.stringify(response)}`);
+  });
+  wsClient.on("error", (err) => {
+    console.error(`\n❌ WS Error: ${err}`);
+  });
+  wsClient.on('open', () => {
+    console.log('✅ WebSocket connesso\n');
+  });
+  
+  // Heartbeat ogni 10 secondi
+  setInterval(showHeartbeat, 10000);
   
   // Polling per funding rate (non disponibile via websocket)
   setInterval(fetchFundingRates, 60000); // ogni minuto
+  
+  // Status report ogni 5 minuti
+  setInterval(showStatusReport, 5 * 60 * 1000);
 }
 
 // Handler per aggiornamenti WebSocket
 function handleWebSocketUpdate(update: any) {
+  const timestamp = new Date().toLocaleTimeString('it-IT');
+  
   if (update.topic?.startsWith("tickers.")) {
     const symbol = update.topic.split(".")[1];
     const data = update.data;
+    const oldPrice = marketState[symbol]?.price || 0;
+    const newPrice = parseFloat(data.lastPrice);
+    const priceChange = oldPrice > 0 ? ((newPrice - oldPrice) / oldPrice * 100) : 0;
+    
     marketState[symbol] = {
       ...marketState[symbol],
       symbol,
-      price: parseFloat(data.lastPrice),
-      // aggiungi qui altri dati se disponibili
+      price: newPrice,
+      volume24h: parseFloat(data.volume24h || '0'),
+      change24h: parseFloat(data.price24hPcnt || '0') * 100,
     };
-    console.log(`💹 ${symbol}: ${data.lastPrice}`);
+    
+    const changeIcon = priceChange > 0 ? '📈' : priceChange < 0 ? '📉' : '➡️';
+    const priceChangeStr = Math.abs(priceChange) > 0.01 ? ` (${priceChange > 0 ? '+' : ''}${priceChange.toFixed(2)}%)` : '';
+    console.log(`\n💹 [${timestamp}] ${symbol}: $${newPrice}${priceChangeStr} ${changeIcon}`);
+    
   } else if (update.topic?.startsWith("liquidation.")) {
     const symbol = update.topic.split(".")[1];
     const data = update.data;
     marketState[symbol] = {
       ...marketState[symbol],
       symbol,
-      // puoi aggiungere liquidazioni24h o altri campi custom
     };
-    console.log(`💥 Liquidazione ${data.side} su ${symbol}: ${data.size} @ ${data.price}`);
+    
+    const sideIcon = data.side === 'Buy' ? '🟢' : '🔴';
+    const size = parseFloat(data.size);
+    const sizeFormatted = size > 1000000 ? `${(size/1000000).toFixed(1)}M` : size > 1000 ? `${(size/1000).toFixed(1)}K` : size.toFixed(0);
+    console.log(`\n💥 [${timestamp}] Liquidazione ${sideIcon} ${data.side} su ${symbol}: $${sizeFormatted} @ $${data.price}`);
   }
 
   // Quando hai dati sufficienti, valuta le strategie
@@ -233,11 +283,18 @@ function handleWebSocketUpdate(update: any) {
           activePositions[symbol] = activePositions[symbol] || [];
           const alreadyActive = activePositions[symbol].some(p => p.direction === sig.direction);
           if (alreadyActive) {
-            console.log(`⚠️ Posizione già attiva ${sig.direction} su ${symbol}, skip segnale ${strategy}`);
+            console.log(`\n⚠️ [${timestamp}] Posizione già attiva ${sig.direction} su ${symbol}, skip segnale ${strategy}`);
             continue;
           }
+          
+          console.log(`\n🎯 [${timestamp}] NUOVO SEGNALE ${strategy.toUpperCase()}`);
+          console.log(`   📊 ${symbol} ${sig.direction} @ $${sig.entryPrice}`);
+          console.log(`   🎯 Target: $${sig.targetPrice} | 🛡️ SL: $${sig.stopLoss}`);
+          console.log(`   ⚡ Leverage: ${sig.leverage}x | 📝 ${sig.reason}`);
+          
           lastSignals[symbol] = sig.direction;
           // Esegui ordine reale
+          console.log(`   🔄 Esecuzione ordine in corso...`);
           const orderResult = executeTrade(sig);
           orderResult.then(result => {
             if (result.success && result.orderId) {
@@ -250,8 +307,9 @@ function handleWebSocketUpdate(update: any) {
                 leverage: sig.leverage,
                 openTime: Date.now()
               });
+              console.log(`   ✅ Ordine eseguito! ID: ${result.orderId}`);
             } else {
-              console.error(`❌ Errore ordine ${sig.symbol}:`, result.error || 'unknown');
+              console.error(`   ❌ Errore ordine ${sig.symbol}:`, result.error || 'unknown');
             }
           });
         }
@@ -303,44 +361,118 @@ async function closePosition(symbol: string, direction: 'LONG' | 'SHORT', closeR
   activePositions[symbol] = activePositions[symbol] || [];
   const idx = activePositions[symbol].findIndex(p => p.direction === direction);
   if (idx === -1) {
-    console.log(`Nessuna posizione attiva ${direction} su ${symbol} da chiudere.`);
+    console.log(`\n⚠️ Nessuna posizione attiva ${direction} su ${symbol} da chiudere.`);
     return;
   }
+  
   const position = activePositions[symbol][idx];
-  // Calcolo PnL (mock, da migliorare con size reale)
-  const pnl = closePrice && position.entryPrice ? (direction === 'LONG'
-    ? (closePrice - position.entryPrice)
-    : (position.entryPrice - closePrice)) : null;
+  const timestamp = new Date().toLocaleTimeString('it-IT');
+  
+  // Calcolo PnL dettagliato
+  let pnlPercent = 0;
+  let pnlIcon = '⚪';
+  if (closePrice && position.entryPrice) {
+    pnlPercent = direction === 'LONG'
+      ? ((closePrice - position.entryPrice) / position.entryPrice * 100)
+      : ((position.entryPrice - closePrice) / position.entryPrice * 100);
+    pnlIcon = pnlPercent > 0 ? '🟢' : pnlPercent < 0 ? '🔴' : '⚪';
+  }
+  
+  const duration = Math.round((Date.now() - position.openTime) / 60000);
+  
   // Rimuovi da in-memory
   activePositions[symbol].splice(idx, 1);
-  console.log(`🚪 Posizione ${direction} su ${symbol} chiusa. Motivo: ${closeReason}${pnl !== null ? ` | PnL: ${pnl}` : ''}`);
+  
+  console.log(`\n🚪 [${timestamp}] POSIZIONE CHIUSA`);
+  console.log(`   📊 ${symbol} ${direction} | Entry: $${position.entryPrice} | Exit: $${closePrice?.toFixed(4) || 'N/A'}`);
+  console.log(`   💰 PnL: ${pnlIcon}${pnlPercent.toFixed(2)}% | ⏱️ Durata: ${duration}m`);
+  console.log(`   📝 Motivo: ${closeReason}`);
+}
+
+// Status report periodico
+function showStatusReport() {
+  const timestamp = new Date().toLocaleString('it-IT');
+  const totalPositions = Object.values(activePositions).flat().length;
+  const symbolsWithPositions = Object.keys(activePositions).filter(s => activePositions[s].length > 0);
+  
+  console.log(`\n\n📋 === STATUS REPORT [${timestamp}] ===`);
+  console.log(`🎯 Posizioni attive: ${totalPositions}`);
+  console.log(`📊 Simboli monitorati: ${config.mainSymbols.length}`);
+  console.log(`💹 Prezzi aggiornati: ${Object.keys(marketState).length}`);
+  
+  if (symbolsWithPositions.length > 0) {
+    console.log(`\n🔥 POSIZIONI ATTIVE:`);
+    symbolsWithPositions.forEach(symbol => {
+      activePositions[symbol].forEach(pos => {
+        const duration = Math.round((Date.now() - pos.openTime) / 60000);
+        const currentPrice = marketState[symbol]?.price || 0;
+        const pnl = currentPrice > 0 ? (pos.direction === 'LONG' 
+          ? ((currentPrice - pos.entryPrice) / pos.entryPrice * 100)
+          : ((pos.entryPrice - currentPrice) / pos.entryPrice * 100)) : 0;
+        const pnlIcon = pnl > 0 ? '🟢' : pnl < 0 ? '🔴' : '⚪';
+        
+        console.log(`   ${symbol} ${pos.direction} | Entry: $${pos.entryPrice} | Current: $${currentPrice.toFixed(4)} | PnL: ${pnlIcon}${pnl.toFixed(2)}% | ${duration}m`);
+      });
+    });
+  }
+  console.log(`=======================================\n`);
 }
 
 // Fetch funding rates
 async function fetchFundingRates() {
   try {
-    const response = await restClient.getFundingRateHistory({
-      category: "linear",
-      symbol: config.mainSymbols[0] // Uno alla volta
-    });
-    
-    if (response.retCode === 0 && response.result.list?.length > 0) {
-      const data = response.result.list[0];
-      const fundingRate: FundingRate = {
-        symbol: config.mainSymbols[0],
-        rate: parseFloat(data.fundingRate),
-        nextFundingTime: parseInt(data.fundingTime)
-      };
+    for (const symbol of config.mainSymbols) {
+      const response = await restClient.getFundingRateHistory({
+        category: "linear",
+        symbol
+      });
       
-      console.log(`💰 Funding rate ${fundingRate.symbol}: ${(fundingRate.rate * 100).toFixed(4)}%`);
+      if (response.retCode === 0 && response.result.list?.length > 0) {
+        const data = response.result.list[0];
+        const rate = parseFloat(data.fundingRate);
+        marketState[symbol] = {
+          ...marketState[symbol],
+          fundingRate: rate,
+          nextFundingTime: parseInt(data.fundingTime)
+        };
+        
+        if (Math.abs(rate) >= 0.0005) { // Solo se significativo
+          const ratePercent = (rate * 100).toFixed(4);
+          const nextFunding = new Date(parseInt(data.fundingTime)).toLocaleTimeString('it-IT');
+          console.log(`\n💰 ${symbol} Funding: ${ratePercent}% (prossimo: ${nextFunding})`);
+        }
+      }
     }
   } catch (error) {
-    console.error("Errore nel fetch funding rate:", error);
+    console.error("\n❌ Errore nel fetch funding rate:", error);
   }
 }
 
+// Gestione graceful shutdown
+process.on('SIGINT', () => {
+  console.log('\n\n🛑 Shutdown richiesto dall\'utente...');
+  console.log('📊 Chiusura posizioni attive...');
+  
+  const totalPositions = Object.values(activePositions).flat().length;
+  if (totalPositions > 0) {
+    console.log(`⚠️ ATTENZIONE: ${totalPositions} posizioni ancora aperte!`);
+    Object.keys(activePositions).forEach(symbol => {
+      activePositions[symbol].forEach(pos => {
+        console.log(`   ${symbol} ${pos.direction} @ $${pos.entryPrice}`);
+      });
+    });
+  }
+  
+  console.log('✅ GPT-Wolf terminato.');
+  process.exit(0);
+});
+
 // Avvio applicazione
-main().catch(console.error);
+console.log('🚀 Avvio GPT-Wolf...');
+main().catch((error) => {
+  console.error('💥 Errore fatale:', error);
+  process.exit(1);
+});
 
 // Esempio di utilizzo per chiusura automatica (puoi chiamare dove vuoi):
 // await closePosition('BTCUSDT', 'LONG', 'take_profit', 70000);

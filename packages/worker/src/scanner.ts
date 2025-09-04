@@ -40,23 +40,27 @@ interface MarketSummary {
 }
 
 export async function runMarketScan(): Promise<MarketSummary[]> {
+  const startTime = Date.now();
   console.log('🔍 Iniziando scansione del mercato...');
+  console.log(`⏰ Timestamp: ${new Date().toLocaleString('it-IT')}`);
 
   // Progress tracker
-  const totalSteps = 7;
+  const totalSteps = 8;
   let currentStep = 0;
 
-  const updateProgress = (step: string) => {
+  const updateProgress = (step: string, details?: string) => {
     currentStep++;
     const percentage = Math.round((currentStep / totalSteps) * 100);
-    process.stdout.write(`\r📊 [${percentage}%] ${step}...`);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    process.stdout.write(`\r📊 [${percentage}%] ${step}${details ? ` (${details})` : ''}... [${elapsed}s]`);
   };
 
   try {
     // 1. Ottieni tutti i contratti perpetui disponibili (linear + inverse)
-    updateProgress('Recupero contratti perpetui');
+    updateProgress('Recupero contratti perpetui', 'Bybit API');
     const perpetuals = await getPerpetualContracts();
     console.log(`\n📊 Trovati ${perpetuals.length} contratti perpetui`);
+    console.log(`🔗 Connessione API: ${USE_TESTNET ? 'TESTNET' : 'PRODUZIONE'}`);
 
     // Filtra per i simboli configurati se forniti, altrimenti usa tutti
     let filteredSymbols = perpetuals;
@@ -78,26 +82,31 @@ export async function runMarketScan(): Promise<MarketSummary[]> {
     }
 
     // 2. Ottieni i ticker per tutti i simboli (linear + inverse)
-    updateProgress('Recupero ticker di mercato');
+    updateProgress('Recupero ticker di mercato', `${filteredSymbols.length} simboli`);
     const tickers = await getTickersForSymbols(filteredSymbols);
+    console.log(`\n💹 Ticker recuperati: ${Object.keys(tickers).length}/${filteredSymbols.length}`);
 
     // 3. Ottieni i funding rate per tutti i simboli (linear + inverse)
-    updateProgress('Analisi funding rates');
+    updateProgress('Analisi funding rates', 'API calls paralleli');
     const fundingRates = await getFundingRatesForSymbols(filteredSymbols);
+    console.log(`\n💰 Funding rates recuperati: ${Object.keys(fundingRates).length}/${filteredSymbols.length}`);
 
     // 4. Ottieni l'open interest per tutti i simboli (linear + inverse)
-    updateProgress('Calcolo open interest');
+    updateProgress('Calcolo open interest', 'Dati istituzionali');
     const openInterest = await getOpenInterestForSymbols(filteredSymbols);
+    console.log(`\n🔒 Open Interest recuperato: ${Object.keys(openInterest).length}/${filteredSymbols.length}`);
 
     // 5. Ottieni candele 1m per ogni simbolo (FETCH PARALLELO)
-    updateProgress('Analisi candele 1m');
+    updateProgress('Analisi candele 1m', 'Fetch parallelo');
     const candlesEntries = await Promise.all(
       filteredSymbols.map(async symbol => [symbol, await getCandles1m(symbol, 5)])
     );
     const candlesMap: Record<string, any[]> = Object.fromEntries(candlesEntries);
+    const candlesCount = Object.values(candlesMap).filter(c => c.length > 0).length;
+    console.log(`\n📈 Candele 1m recuperate: ${candlesCount}/${filteredSymbols.length}`);
 
     // 6. Combina tutti i dati
-    updateProgress('Elaborazione dati di mercato');
+    updateProgress('Elaborazione dati di mercato', 'Aggregazione');
     const markets: MarketSummary[] = filteredSymbols.map(symbol => {
       const ticker = tickers[symbol];
       const funding = fundingRates[symbol];
@@ -130,11 +139,12 @@ export async function runMarketScan(): Promise<MarketSummary[]> {
     }).filter(Boolean) as MarketSummary[];
 
     // 7. Filtra per volume minimo
-    updateProgress('Finalizzazione analisi');
+    updateProgress('Filtraggio per volume', `>${MIN_VOLUME.toLocaleString()}`);
     const highVolumeMarkets = markets.filter(m => m.volume24h >= MIN_VOLUME);
     console.log(`\n💰 ${highVolumeMarkets.length} mercati con volume > $${MIN_VOLUME.toLocaleString()}`);
 
-    // 8. Trova mercati con funding rate estremi
+    // 8. Analisi opportunità di trading
+    updateProgress('Identificazione opportunità', 'Analisi finale');
     const extremeFundingMarkets = highVolumeMarkets.filter(m => Math.abs(m.fundingRate) >= 0.0005);
     console.log(`💸 ${extremeFundingMarkets.length} mercati con funding rate estremo (>=0.05%)`);
 
@@ -142,8 +152,11 @@ export async function runMarketScan(): Promise<MarketSummary[]> {
     const volumeAnomalies = detectVolumeAnomalies(highVolumeMarkets);
     console.log(`🚨 ${volumeAnomalies.length} anomalie di volume rilevate`);
 
-    // Clear progress line
-    process.stdout.write('\r' + ' '.repeat(50) + '\r');
+    // Clear progress line e mostra statistiche finali
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    process.stdout.write('\r' + ' '.repeat(80) + '\r');
+    console.log(`\n⚡ Scansione completata in ${totalTime}s`);
+    console.log(`📊 Statistiche: ${markets.length} mercati analizzati, ${highVolumeMarkets.length} ad alto volume`);
 
     // 10. Mostra i risultati
     console.log('\n📈 TOP MERCATI PER VOLUME:');

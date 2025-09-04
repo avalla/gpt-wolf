@@ -39,7 +39,13 @@ testMarkets.forEach(market => {
   console.log('');
 });
 
-const signals = fundingRateStrategy(testMarkets, config);
+const mockTickers = testMarkets.map(m => ({
+  symbol: m.symbol,
+  lastPrice: m.price.toString(),
+  priceChangePercent: m.change24h.toString()
+}));
+
+const signals = fundingRateStrategy(testMarkets, config, mockTickers);
 
 console.log(`🎯 Segnali generati: ${signals.length}\n`);
 

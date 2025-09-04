@@ -36,6 +36,7 @@ interface StrategyConfig {
 }
 
 interface Ticker {
+  symbol: string;
   lastPrice: string;
   priceChangePercent: string;
 }
@@ -114,14 +115,20 @@ export function fundingRateStrategy(
     const direction = market.fundingRate < 0 ? 'LONG' : 'SHORT';
     const leverage = getRealisticLeverage(market.symbol, market.fundingRate);
 
-    // Calcola TP e SL basati su entry ottimale
+    // TP/SL aggressivi per trading ad alta frequenza
+    // TP: 0.2-0.8% massimo per chiusure rapide
+    // SL: 0.15-0.4% per limitare perdite
+    const fundingIntensity = Math.abs(market.fundingRate) * 1000; // Scala a 0-10
+    const tpPercent = Math.min(0.002 + (fundingIntensity * 0.0001), 0.008); // 0.2-0.8%
+    const slPercent = Math.min(0.0015 + (fundingIntensity * 0.00005), 0.004); // 0.15-0.4%
+    
     const targetPrice = direction === 'LONG'
-      ? optimalEntry * (1 + (Math.abs(market.fundingRate) * leverage * 0.8))
-      : optimalEntry * (1 - (Math.abs(market.fundingRate) * leverage * 0.8));
+      ? optimalEntry * (1 + tpPercent)
+      : optimalEntry * (1 - tpPercent);
 
     const stopLoss = direction === 'LONG'
-      ? optimalEntry * (1 - (Math.abs(market.fundingRate) * 2))
-      : optimalEntry * (1 + (Math.abs(market.fundingRate) * 2));
+      ? optimalEntry * (1 - slPercent)
+      : optimalEntry * (1 + slPercent);
 
     const timeframe = '1h'; // Timeframe di riferimento per funding rate
     const validUntil = now + (8 * 60 * 60 * 1000); // Funding rate si aggiorna ogni 8h
@@ -138,7 +145,7 @@ export function fundingRateStrategy(
       targetPrice,
       stopLoss,
       leverage,
-      reason: `Funding rate ${(market.fundingRate * 100).toFixed(4)}% - ${direction === 'LONG' ? 'Short squeeze' : 'Long squeeze'} previsto`,
+      reason: `Funding ${(market.fundingRate * 100).toFixed(4)}% | TP: ${(tpPercent*100).toFixed(2)}% | SL: ${(slPercent*100).toFixed(2)}% | ${direction === 'LONG' ? 'Short squeeze' : 'Long squeeze'}`,
       timestamp: now,
       timeframe,
       validUntil,
