@@ -8,16 +8,19 @@ Un bot di trading aggressivo per il mercato dei futures su Bybit, progettato per
 - 💰 **Strategie aggressive**: utilizza leve alte (25x-100x) per massimizzare i profitti
 - 📊 **Analisi tecnica avanzata**: monitora funding rate, liquidazioni, CVD e anomalie di volume
 - 🤖 **Trading automatizzato**: genera segnali di trading basati su strategie multiple
-- 📈 **Dashboard**: salva tutti i dati in Supabase per analisi e monitoraggio
+- 📱 **Notifiche Telegram**: ricevi segnali di trading in tempo reale sul tuo telefono
+- 💾 **Database SQLite**: storage locale per storico segnali e analisi
 
 ## Struttura del Progetto
 
 Il progetto è strutturato come un monorepo Bun con i seguenti pacchetti:
 
 - `@gpt-wolf/worker`: componente principale che utilizza l'API Bybit
-- `@gpt-wolf/core`: tipi e funzionalità condivise
-- `@gpt-wolf/db`: integrazione con Supabase per il salvataggio dei dati
+- `@gpt-wolf/core`: tipi, funzionalità condivise e notifiche Telegram
+- `@gpt-wolf/db`: database SQLite per storage locale
 - `@gpt-wolf/strategies`: implementazione di strategie di trading aggressive
+- `@gpt-wolf/frontend`: dashboard React per monitoraggio segnali
+- `@gpt-wolf/api`: server API per interfaccia web
 
 ## Installazione
 
@@ -58,33 +61,48 @@ MAX_CONCURRENT_POSITIONS=5
 ## Utilizzo
 
 ```bash
-# Avvia il bot di trading
-bun run dev
+# Avvia il sistema completo (API + Frontend + Trading Bot)
+bun run dev:full
 
-# Esegui una scansione del mercato
-bun run scan
-
-# Genera segnali di trading
+# Solo bot di trading
 bun run trade
+
+# Solo frontend
+bun run frontend:dev
+
+# Solo API server
+bun run api:dev
 ```
 
 ## Strategie di Trading
 
 Il bot implementa diverse strategie di trading aggressive:
 
-1. **Momentum Strategy**: cerca movimenti di prezzo significativi e apre posizioni nella direzione del trend con leva 25x-100x
-2. **Funding Rate Strategy**: cerca contratti con funding rate estremi e apre posizioni contro il mercato con leva 50x-100x
-3. **Liquidation Hunting**: cerca aree con alta concentrazione di liquidazioni e apre posizioni per innescare un effetto cascata
-4. **Volume Anomaly**: identifica manipolazioni di mercato attraverso anomalie di volume e ne approfitta
+1. **Scalping Ultra-Rapido**: movimenti micro con leva 75x-100x basati su volatilità
+2. **Funding Rate Contrarian**: posizioni contro funding rate estremi (>0.1%)
+3. **Liquidation Cluster Scalping**: sfrutta cluster di liquidazioni per cascate
+4. **Volume Anomaly**: identifica manipolazioni tramite anomalie di volume
+5. **Liquidation Heatmap**: mappa densità liquidazioni per entry precise
 
-## Integrazione con Supabase
+## Sistema di Notifiche e Storage
 
-Il bot salva tutti i dati di scansione e i segnali di trading in Supabase per analisi e monitoraggio. Per configurare il database Supabase:
+### **SQLite Database** (Storage Primario)
+- 💾 **Salvataggio persistente** di tutti i segnali di trading
+- 📊 **Storico completo** per analisi e backtesting
+- 🔍 **Query locali** per performance tracking
+- 📈 **Integrazione con dashboard** per visualizzazione
 
-1. Crea un nuovo progetto su [Supabase](https://supabase.com)
-2. Crea le seguenti tabelle:
-   - `market_scans`: per salvare i risultati delle scansioni
-   - `trade_signals`: per salvare i segnali di trading generati
+### **Telegram Bot** (Notifiche Real-Time)
+- 📱 **Alert immediati** su mobile per ogni segnale
+- ⚡ **Formato ottimizzato** con R/R ratio e profit potenziale
+- 🚨 **Solo notifiche** - non storage alternativo
+- 💬 **Messaggi professionali** con emoji e Markdown
+
+### Configurazione Telegram Bot:
+1. Crea bot con [@BotFather](https://t.me/BotFather)
+2. Ottieni `TELEGRAM_BOT_TOKEN`
+3. Trova il tuo `TELEGRAM_CHAT_ID`
+4. Aggiungi le variabili al file `.env`
 
 ## ⚠️ Avvertenze
 
@@ -92,10 +110,20 @@ Il bot salva tutti i dati di scansione e i segnali di trading in Supabase per an
 - **SOLO PER TRADER ESPERTI**: L'utilizzo di leve 25x-100x è adatto solo a trader molto esperti
 - **TESTARE IN TESTNET**: Si consiglia vivamente di testare il bot in modalità testnet prima di utilizzarlo con fondi reali
 
-## Roadmap
+## Funzionalità Implementate
 
-- [ ] Implementare backtesting delle strategie
-- [ ] Aggiungere supporto per trading automatico con API Bybit
-- [ ] Creare dashboard per monitoraggio in tempo reale
-- [ ] Implementare notifiche Telegram per segnali di trading
-- [ ] Aggiungere supporto per altre exchange
+- [x] **Dashboard React** con monitoraggio real-time
+- [x] **Notifiche Telegram** per tutti i segnali
+- [x] **Database SQLite** per storage locale
+- [x] **5+ Strategie** aggressive ad alta leva
+- [x] **Liquidation Heatmap** per visualizzazione cluster
+- [x] **API REST** per integrazione frontend
+- [x] **Monorepo Bun** con TypeScript
+
+## Roadmap Future
+
+- [ ] Trading automatico con esecuzione ordini
+- [ ] Backtesting engine per strategie
+- [ ] Supporto exchange multipli
+- [ ] Mobile app nativa
+- [ ] Machine learning per pattern recognition
