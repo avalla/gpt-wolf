@@ -1,0 +1,36 @@
+{
+  "name": "gpt-wolf",
+  "version": "1.0.0",
+  "description": "Bot di trading aggressivo per futures con leva alta",
+  "author": "",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"bun run api:dev\" \"bun run frontend:dev\" --names \"API,FE.\" --prefix-colors \"blue,green\"",
+    "dev:full": "concurrently \"bun run api:dev\" \"bun run frontend:dev\" \"bun run trade\" --names \"API,FE.,BOT\" --prefix-colors \"blue,green,yellow\"",
+    "scan": "bun run packages/worker/src/scanner.ts",
+    "analyze": "bun run packages/worker/src/analyze.ts",
+    "trade": "bun run packages/worker/src/trade.ts",
+    "api:dev": "cd packages/api && bun run dev",
+    "api:build": "cd packages/api && bun run build",
+    "frontend:dev": "cd packages/frontend && bun run dev",
+    "frontend:build": "cd packages/frontend && bun run build",
+    "frontend:preview": "cd packages/frontend && bun run preview",
+    "build": "bun build packages/worker/src/trade.ts packages/worker/src/scanner.ts packages/worker/src/analyze.ts packages/api/src/index.ts --outdir ./dist --target node",
+    "build:tsc": "tsc -b packages/core packages/db packages/strategies packages/worker packages/api",
+    "clean": "rm -rf dist && find packages -name '*.js' -delete"
+  },
+  "dependencies": {
+    "bybit-api": "^4.1.14",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "typescript": "^5.0.0",
+    "concurrently": "^7.5.0"
+  }
+}

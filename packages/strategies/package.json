@@ -1,0 +1,13 @@
+{
+  "name": "@gpt-wolf/strategies",
+  "version": "0.0.1",
+  "type": "module",
+  "dependencies": {
+    "@gpt-wolf/core": "workspace:*",
+    "@gpt-wolf/db": "workspace:*",
+    "bybit-api": "^4.1.14"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

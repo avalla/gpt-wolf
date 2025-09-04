@@ -1,0 +1,15 @@
+{
+  "name": "@gpt-wolf/worker",
+  "version": "0.0.1",
+  "type": "module",
+  "dependencies": {
+    "@gpt-wolf/core": "workspace:*",
+    "@gpt-wolf/db": "workspace:*",
+    "@gpt-wolf/strategies": "workspace:*",
+    "bybit-api": "^4.1.14",
+    "dotenv": "^16.0.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
