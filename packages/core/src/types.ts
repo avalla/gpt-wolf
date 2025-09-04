@@ -39,6 +39,11 @@ export interface CVDData {
 }
 
 /**
+ * Tipologie di ordine disponibili
+ */
+export type OrderType = 'Market' | 'Limit' | 'Conditional' | 'TWAP' | 'Iceberg';
+
+/**
  * Segnale di trading
  */
 export interface TradeSignal {
@@ -48,8 +53,13 @@ export interface TradeSignal {
   targetPrice: number;
   stopLoss: number;
   leverage: number;
+  orderType: OrderType;
   reason: string;
   timestamp: number;
+  timeframe: string; // Timeframe di riferimento (1m, 5m, 15m, 1h, 4h, 1d)
+  validUntil: number; // Timestamp fino a quando il segnale è valido
+  createdAt: string; // Data/ora leggibile di creazione
+  expiresAt: string; // Data/ora leggibile di scadenza
 }
 
 /**

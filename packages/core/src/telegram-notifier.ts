@@ -1,4 +1,4 @@
-import type { TradeSignal } from '@gpt-wolf/db';
+import type { TradeSignal } from './types';
 
 /**
  * Sistema di notifiche Telegram per segnali di trading
@@ -87,6 +87,8 @@ export class TelegramNotifier {
     const riskReward = this.calculateRiskReward(signal);
     const potentialProfit = this.calculatePotentialProfit(signal);
     
+    const orderTypeIcon = this.getOrderTypeIcon(signal.orderType);
+    
     return `🐺 *GPT WOLF SIGNAL*
 
 ${direction} *${signal.symbol}*
@@ -94,13 +96,16 @@ ${direction} *${signal.symbol}*
 🎯 Target: \`$${signal.targetPrice.toFixed(4)}\`
 🛡️ Stop Loss: \`$${signal.stopLoss.toFixed(4)}\`
 ⚡ Leverage: \`${leverage}\`
+${orderTypeIcon} Order: \`${signal.orderType || 'Market'}\`
 📊 R/R: \`${riskReward}\`
 💸 Potential: \`+${potentialProfit}%\`
 
+⏰ *Creato:* ${signal.createdAt || new Date(signal.timestamp).toLocaleString('it-IT')}
+📅 *Timeframe:* ${signal.timeframe || '1h'}
+⌛ *Valido fino:* ${signal.expiresAt || 'N/A'}
+
 📝 *Reason:*
 \`${signal.reason}\`
-
-⏰ ${new Date(signal.timestamp).toLocaleString('it-IT')}
 
 _Usa sempre gestione del rischio appropriata_`;
   }
@@ -125,6 +130,20 @@ _Usa sempre gestione del rischio appropriata_`;
     
     const leveragedProfit = priceChange * signal.leverage * 100;
     return leveragedProfit.toFixed(1);
+  }
+
+  /**
+   * Ottiene icona per tipo di ordine
+   */
+  private getOrderTypeIcon(orderType?: string): string {
+    switch (orderType) {
+      case 'Market': return '⚡';
+      case 'Limit': return '🎯';
+      case 'Conditional': return '🔄';
+      case 'TWAP': return '📊';
+      case 'Iceberg': return '🧊';
+      default: return '⚡';
+    }
   }
 
   /**

@@ -169,7 +169,7 @@ export async function runMarketScan(): Promise<MarketSummary[]> {
         .sort((a, b) => Math.abs(b.fundingRate) - Math.abs(a.fundingRate))
         .forEach((market, index) => {
           const fundingPercentage = (market.fundingRate * 100).toFixed(4);
-          const nextFunding = new Date(market.nextFundingTime).toLocaleString();
+          const nextFunding = market.nextFundingTime > 0 ? new Date(market.nextFundingTime).toLocaleString() : 'Non disponibile';
 
           console.log(`${index + 1}. ${market.symbol}`);
           console.log(`   💸 Funding Rate: ${fundingPercentage}%`);
