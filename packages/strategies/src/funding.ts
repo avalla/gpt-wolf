@@ -46,15 +46,15 @@ interface Ticker {
  */
 function getRealisticLeverage(symbol: string, fundingRate: number): number {
   const leverageLimits: Record<string, number> = {
-    'BTCUSDT': 100, 'ETHUSDT': 100, 'SOLUSDT': 50, 'ADAUSDT': 50,
-    'AVAXUSDT': 25, 'LINKUSDT': 25, 'DOGEUSDT': 25,
+    'BTCUSDT': 50, 'ETHUSDT': 50, 'SOLUSDT': 25, 'ADAUSDT': 25,
+    'AVAXUSDT': 20, 'LINKUSDT': 20, 'DOGEUSDT': 20,
     'RADUSDT': 12.5, // Limite reale per RADUSDT
   };
 
-  const maxLeverage = leverageLimits[symbol] || 20; // Default conservativo
-  const fundingBasedLeverage = Math.abs(fundingRate) * 20000; // Scala ridotta
+  const maxLeverage = leverageLimits[symbol] || 15; // Default molto conservativo
+  const fundingBasedLeverage = Math.abs(fundingRate) * 5000; // Scala molto ridotta
 
-  return Math.max(5, Math.min(Math.floor(fundingBasedLeverage), maxLeverage));
+  return Math.max(3, Math.min(Math.floor(fundingBasedLeverage), maxLeverage));
 }
 
 /**

@@ -45,6 +45,7 @@ export interface TradeSignal {
   validUntil?: number;
   createdAt?: string;
   expiresAt?: string;
+  status?: 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
 }
 
 /**

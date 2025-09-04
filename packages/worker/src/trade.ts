@@ -3,7 +3,7 @@ import * as dotenv from 'dotenv';
 import { RestClientV5 } from 'bybit-api';
 import path from 'path';
 import fs from 'fs';
-import { saveTradeSignal, getActiveTradeSignals } from '@gpt-wolf/db';
+import { saveTradeSignal, getActiveTradeSignals, updateSignalStatus, cleanupInvalidDates } from '@gpt-wolf/db';
 import { createTelegramNotifier } from '@gpt-wolf/core';
 
 // Carica variabili d'ambiente
@@ -66,6 +66,9 @@ async function runTradingSystem() {
   console.log('🐺 GPT-Wolf Trading System');
   console.log('==========================');
 
+  // Pulisci date invalide nel database
+  cleanupInvalidDates();
+
   // Mostra segnali attivi esistenti
   showActiveSignals();
 
@@ -121,7 +124,8 @@ async function runTradingSystem() {
       const strategyName = strategy.name.replace(/Strategy$/, '').toLowerCase();
       if (enabledStrategies.length > 0 && !enabledStrategies.includes(strategyName)) continue;
       try {
-        const s = strategy(markets, config);
+        // Alcune strategie richiedono il parametro tickers
+        const s = strategy.length > 2 ? strategy(markets, config, []) : strategy(markets, config);
         if (Array.isArray(s)) signals.push(...s);
         else if (s) signals.push(s);
       } catch (err) {
@@ -270,21 +274,23 @@ async function validateAndAdjustLeverage(symbol: string, requestedLeverage: numb
       return requestedLeverage;
     }
 
-    const maxLeverage = parseFloat(symbolInfo.leverageFilter?.maxLeverage || '100');
+    const maxLeverage = parseFloat(symbolInfo.leverageFilter?.maxLeverage || '20');
     const minLeverage = parseFloat(symbolInfo.leverageFilter?.minLeverage || '1');
 
+    // Usa sempre la leva massima disponibile se quella richiesta è troppo alta
+    const finalLeverage = Math.min(requestedLeverage, maxLeverage);
+    
     if (requestedLeverage > maxLeverage) {
       console.warn(`⚠️ Leva ${requestedLeverage}x troppo alta per ${symbol}, uso max ${maxLeverage}x`);
-      return maxLeverage;
     }
 
-    if (requestedLeverage < minLeverage) {
-      console.warn(`⚠️ Leva ${requestedLeverage}x troppo bassa per ${symbol}, uso min ${minLeverage}x`);
+    if (finalLeverage < minLeverage) {
+      console.warn(`⚠️ Leva ${finalLeverage}x troppo bassa per ${symbol}, uso min ${minLeverage}x`);
       return minLeverage;
     }
 
-    console.log(`✅ Leva ${requestedLeverage}x valida per ${symbol} (range: ${minLeverage}x-${maxLeverage}x)`);
-    return requestedLeverage;
+    console.log(`✅ Leva ${finalLeverage}x per ${symbol} (max: ${maxLeverage}x)`);
+    return finalLeverage;
   } catch (error) {
     console.error(`❌ Errore validazione leva per ${symbol}:`, error);
     return requestedLeverage;
@@ -412,7 +418,8 @@ async function setStopLossAndTakeProfit(signal: any, orderId?: string): Promise<
       stopLoss: signal.stopLoss.toString(),
       takeProfit: signal.targetPrice.toString(),
       tpTriggerBy: 'LastPrice',
-      slTriggerBy: 'LastPrice'
+      slTriggerBy: 'LastPrice',
+      positionIdx: 0
     });
 
     console.log(`🎯 SL/TP impostati per ${signal.symbol}: SL=${signal.stopLoss} TP=${signal.targetPrice}`);
