@@ -26,7 +26,7 @@ Il progetto è strutturato come un monorepo Bun con i seguenti pacchetti:
 
 ```bash
 # Clona il repository
-git clone https://github.com/yourusername/gpt-wolf.git
+git clone https://github.com/avalla/gpt-wolf.git
 cd gpt-wolf
 
 # Installa le dipendenze
