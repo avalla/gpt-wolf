@@ -3,7 +3,14 @@ import type { TradeSignal } from './types';
 
 export * from './types';
 
-const db = new Database('local.sqlite', { create: true });
+import { join } from 'path';
+
+// Database centralizzato nella root del progetto
+const dbPath = join(process.cwd().includes('packages') 
+  ? process.cwd().split('packages')[0] 
+  : process.cwd(), 'gpt-wolf.sqlite');
+
+const db = new Database(dbPath, { create: true });
 
 function initializeSchema() {
   const schema = `

@@ -3,7 +3,7 @@ import * as dotenv from 'dotenv';
 import { RestClientV5 } from 'bybit-api';
 import path from 'path';
 import fs from 'fs';
-import { saveTradeSignal } from '@gpt-wolf/db';
+import { saveTradeSignal, getActiveTradeSignals } from '@gpt-wolf/db';
 import { createTelegramNotifier } from '@gpt-wolf/core';
 
 // Carica variabili d'ambiente
@@ -23,12 +23,52 @@ const client = new RestClientV5({
 });
 
 /**
+ * Mostra tutti i segnali attivi dal database
+ */
+function showActiveSignals(): void {
+  try {
+    const activeSignals = getActiveTradeSignals();
+
+    if (activeSignals.length === 0) {
+      console.log('\n📊 Nessun segnale attivo nel database');
+      return;
+    }
+
+    console.log(`\n📊 Segnali attivi nel database (${activeSignals.length}):`);
+    console.log('='.repeat(100));
+    console.log('SIMBOLO'.padEnd(12) + 'DIREZIONE'.padEnd(10) + 'PREZZO'.padEnd(12) +
+      'TARGET'.padEnd(12) + 'STOP'.padEnd(12) + 'LEVA'.padEnd(8) + 'ORDINE'.padEnd(12) + 'TIMEFRAME'.padEnd(10) + 'MOTIVO');
+    console.log('-'.repeat(100));
+
+    for (const signal of activeSignals) {
+      console.log(
+        signal.symbol.padEnd(12) +
+        signal.direction.padEnd(10) +
+        signal.entryPrice.toFixed(4).padEnd(12) +
+        signal.targetPrice.toFixed(4).padEnd(12) +
+        signal.stopLoss.toFixed(4).padEnd(12) +
+        `${signal.leverage}x`.padEnd(8) +
+        (signal.orderType || 'Market').padEnd(12) +
+        (signal.timeframe || '15m').padEnd(10) +
+        signal.reason
+      );
+    }
+    console.log('='.repeat(100));
+  } catch (error) {
+    console.error('❌ Errore nel recupero segnali attivi:', error);
+  }
+}
+
+/**
  * Esegue una scansione completa del mercato, genera segnali di trading
  * e li salva in SQLite
  */
 async function runTradingSystem() {
   console.log('🐺 GPT-Wolf Trading System');
   console.log('==========================');
+
+  // Mostra segnali attivi esistenti
+  showActiveSignals();
 
   try {
     // 1. Esegui scansione del mercato
@@ -143,17 +183,18 @@ async function runTradingSystem() {
       return acc;
     }, []);
 
-    // Limita il numero di segnali al massimo consentito
+    // Limita il numero di segnali al massimo consentito per le posizioni attive
     const limitedSignals = uniqueSignals.slice(0, MAX_CONCURRENT_POSITIONS);
 
-    // 4. Mostra e salva i segnali
-    console.log(`\n✅ Generati ${limitedSignals.length} segnali di trading:`);
+    // 4. Mostra TUTTI i segnali generati (non limitati)
+    console.log(`\n✅ Generati ${uniqueSignals.length} segnali di trading:`);
     console.log('='.repeat(100));
     console.log('SIMBOLO'.padEnd(12) + 'DIREZIONE'.padEnd(10) + 'PREZZO'.padEnd(12) +
       'TARGET'.padEnd(12) + 'STOP'.padEnd(12) + 'LEVA'.padEnd(8) + 'ORDINE'.padEnd(12) + 'TIMEFRAME'.padEnd(10) + 'MOTIVO');
     console.log('-'.repeat(100));
 
-    for (const signal of limitedSignals) {
+    // Mostra tutti i segnali generati
+    for (const signal of uniqueSignals) {
       console.log(
         signal.symbol.padEnd(12) +
         signal.direction.padEnd(10) +
@@ -165,7 +206,6 @@ async function runTradingSystem() {
         (signal.timeframe || '15m').padEnd(10) +
         signal.reason
       );
-
     }
 
     console.log('='.repeat(100));
