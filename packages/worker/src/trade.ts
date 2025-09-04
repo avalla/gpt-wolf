@@ -13,7 +13,6 @@ dotenv.config();
 const API_KEY = process.env.BYBIT_API_KEY || '';
 const API_SECRET = process.env.BYBIT_API_SECRET || '';
 const USE_TESTNET = process.env.TESTNET === 'true';
-const MAX_CONCURRENT_POSITIONS = parseInt(process.env.MAX_CONCURRENT_POSITIONS || '5');
 
 // Crea client Bybit
 const client = new RestClientV5({
@@ -183,10 +182,7 @@ async function runTradingSystem() {
       return acc;
     }, []);
 
-    // Limita il numero di segnali al massimo consentito per le posizioni attive
-    const limitedSignals = uniqueSignals.slice(0, MAX_CONCURRENT_POSITIONS);
-
-    // 4. Mostra TUTTI i segnali generati (non limitati)
+    // 4. Mostra TUTTI i segnali generati
     console.log(`\n✅ Generati ${uniqueSignals.length} segnali di trading:`);
     console.log('='.repeat(100));
     console.log('SIMBOLO'.padEnd(12) + 'DIREZIONE'.padEnd(10) + 'PREZZO'.padEnd(12) +
@@ -212,7 +208,7 @@ async function runTradingSystem() {
     console.log('\n✅ Sistema di trading completato');
 
     // Calcola il potenziale profitto se tutti i segnali raggiungono il target
-    const potentialProfit = limitedSignals.reduce((total, signal) => {
+    const potentialProfit = uniqueSignals.reduce((total, signal) => {
       const profitPercentage = signal.direction === 'LONG'
         ? (signal.targetPrice - signal.entryPrice) / signal.entryPrice * 100 * signal.leverage
         : (signal.entryPrice - signal.targetPrice) / signal.entryPrice * 100 * signal.leverage;
@@ -222,7 +218,7 @@ async function runTradingSystem() {
     console.log(`\n💸 Profitto potenziale: ${potentialProfit.toFixed(2)}%`);
 
     // Calcola il rischio massimo se tutti i segnali raggiungono lo stop loss
-    const maxRisk = limitedSignals.reduce((total, signal) => {
+    const maxRisk = uniqueSignals.reduce((total, signal) => {
       const riskPercentage = signal.direction === 'LONG'
         ? (signal.entryPrice - signal.stopLoss) / signal.entryPrice * 100 * signal.leverage
         : (signal.stopLoss - signal.entryPrice) / signal.entryPrice * 100 * signal.leverage;
@@ -245,4 +241,185 @@ async function runTradingSystem() {
   }
 }
 
-runTradingSystem();
+/**
+ * Recupera informazioni sui simboli da Bybit per validare leve disponibili
+ */
+async function getSymbolInfo(symbol: string): Promise<any> {
+  try {
+    const instrumentInfo = await client.getInstrumentsInfo({
+      category: 'linear',
+      symbol: symbol
+    });
+
+    return instrumentInfo.result?.list?.[0] || null;
+  } catch (error) {
+    console.error(`❌ Errore recupero info simbolo ${symbol}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Valida e corregge la leva per un simbolo specifico
+ */
+async function validateAndAdjustLeverage(symbol: string, requestedLeverage: number): Promise<number> {
+  try {
+    const symbolInfo = await getSymbolInfo(symbol);
+
+    if (!symbolInfo) {
+      console.warn(`⚠️ Info simbolo ${symbol} non disponibili, uso leva ${requestedLeverage}x`);
+      return requestedLeverage;
+    }
+
+    const maxLeverage = parseFloat(symbolInfo.leverageFilter?.maxLeverage || '100');
+    const minLeverage = parseFloat(symbolInfo.leverageFilter?.minLeverage || '1');
+
+    if (requestedLeverage > maxLeverage) {
+      console.warn(`⚠️ Leva ${requestedLeverage}x troppo alta per ${symbol}, uso max ${maxLeverage}x`);
+      return maxLeverage;
+    }
+
+    if (requestedLeverage < minLeverage) {
+      console.warn(`⚠️ Leva ${requestedLeverage}x troppo bassa per ${symbol}, uso min ${minLeverage}x`);
+      return minLeverage;
+    }
+
+    console.log(`✅ Leva ${requestedLeverage}x valida per ${symbol} (range: ${minLeverage}x-${maxLeverage}x)`);
+    return requestedLeverage;
+  } catch (error) {
+    console.error(`❌ Errore validazione leva per ${symbol}:`, error);
+    return requestedLeverage;
+  }
+}
+
+/**
+ * Apre una posizione su Bybit
+ */
+async function openBybitPosition(signal: any): Promise<boolean> {
+  try {
+    // Controlla se esiste già una posizione
+    const hasPosition = await hasExistingPosition(signal.symbol);
+    if (hasPosition) {
+      console.log(`⚠️ Posizione già esistente per ${signal.symbol}, skip apertura`);
+      return false;
+    }
+
+    // Valida e correggi la leva per questo simbolo
+    const validatedLeverage = await validateAndAdjustLeverage(signal.symbol, signal.leverage);
+
+    const capital = parseFloat(process.env.TRADING_CAPITAL || '1000');
+    const orderSize = calculateOrderSize(capital, validatedLeverage, signal.entryPrice);
+
+    // Imposta leva validata
+    await client.setLeverage({
+      category: 'linear',
+      symbol: signal.symbol,
+      buyLeverage: validatedLeverage.toString(),
+      sellLeverage: validatedLeverage.toString()
+    });
+
+    // Apri posizione market
+    const orderResult = await client.submitOrder({
+      category: 'linear',
+      symbol: signal.symbol,
+      side: signal.direction === 'LONG' ? 'Buy' : 'Sell',
+      orderType: 'Market',
+      qty: orderSize.toString(),
+      timeInForce: 'IOC'
+    });
+
+    if (orderResult.retCode === 0) {
+      console.log(`✅ Posizione aperta: ${signal.symbol} ${signal.direction} - Size: ${orderSize} - Leva: ${validatedLeverage}x`);
+
+      // Imposta stop loss e take profit
+      await setStopLossAndTakeProfit(signal, orderResult.result?.orderId);
+
+      return true;
+    } else {
+      console.error(`❌ Errore apertura posizione ${signal.symbol}:`, orderResult.retMsg);
+      return false;
+    }
+  } catch (error) {
+    console.error(`❌ Errore critico apertura ${signal.symbol}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Calcola la size dell'ordine basata sul capitale e leva
+ */
+function calculateOrderSize(capital: number, leverage: number, entryPrice: number, riskPercentage: number = 5): number {
+  const riskAmount = capital * (riskPercentage / 100);
+  const positionValue = riskAmount * leverage;
+  return Number((positionValue / entryPrice).toFixed(6));
+}
+
+/**
+ * Verifica se esiste già una posizione aperta per il simbolo
+ */
+async function hasExistingPosition(symbol: string): Promise<boolean> {
+  try {
+    const positions = await client.getPositionInfo({
+      category: 'linear',
+      symbol: symbol
+    });
+    
+    return positions.result?.list?.some(pos => 
+      parseFloat(pos.size) > 0
+    ) || false;
+  } catch (error) {
+    console.error(`❌ Errore controllo posizione ${symbol}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Avvia il sistema di trading con scansioni automatiche continue
+ */
+async function startTradingBot(): Promise<void> {
+  console.log('🚀 Avvio GPT Wolf Trading Bot...');
+  console.log('⏰ Scansioni automatiche ogni 5 minuti');
+
+  // Prima scansione immediata
+  await runTradingSystem();
+
+  // Scansioni automatiche ogni 5 minuti
+  const SCAN_INTERVAL = 5 * 60 * 1000; // 5 minuti in millisecondi
+
+  setInterval(async () => {
+    console.log('\n🔄 Avvio nuova scansione automatica...');
+    console.log(`⏰ ${new Date().toLocaleString('it-IT')}`);
+    await runTradingSystem();
+  }, SCAN_INTERVAL);
+
+  // Mantieni il processo attivo
+  process.on('SIGINT', () => {
+    console.log('\n🛑 Arresto GPT Wolf Trading Bot...');
+    process.exit(0);
+  });
+}
+
+/**
+ * Imposta stop loss e take profit
+ */
+async function setStopLossAndTakeProfit(signal: any, orderId?: string): Promise<void> {
+  try {
+    // Attendi un momento per assicurarsi che la posizione sia aperta
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    await client.setTradingStop({
+      category: 'linear',
+      symbol: signal.symbol,
+      stopLoss: signal.stopLoss.toString(),
+      takeProfit: signal.targetPrice.toString(),
+      tpTriggerBy: 'LastPrice',
+      slTriggerBy: 'LastPrice'
+    });
+
+    console.log(`🎯 SL/TP impostati per ${signal.symbol}: SL=${signal.stopLoss} TP=${signal.targetPrice}`);
+  } catch (error) {
+    console.error(`❌ Errore impostazione SL/TP per ${signal.symbol}:`, error);
+  }
+}
+
+// Avvia il bot con scansioni automatiche
+startTradingBot();
